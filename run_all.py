@@ -2,15 +2,15 @@ import threading
 import time
 
 from controller_receive import run_receiver
-from controller_receive_uart0_test import run_sender
+from mecanum import run_mecanum
 
 
 def main():
     controller_receiver = threading.Thread(target=run_receiver, daemon=True)
-    sender_1_test = threading.Thread(target=run_sender, daemon=True)
+    mecanum = threading.Thread(target=run_mecanum, daemon=True)
 
     controller_receiver.start()
-    sender_1_test.start()
+    mecanum.start()
 
     try:
         while True:
