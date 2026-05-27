@@ -70,6 +70,13 @@ def speeds_to_pwm_payload(fl: float, fr: float, rl: float, rr: float, dead: floa
     return [fl_f, fl_r, fr_f, fr_r, rl_f, rl_r, rr_f, rr_r]
 
 
+def _approach(current: float, target: float, step: float) -> float:
+    """Move current toward target by at most step."""
+    if current < target:
+        return min(current + step, target)
+    return max(current - step, target)
+
+
 def run_mecanum(poll_interval: float = 0.02):
     """Poll `controller_state.get_values()` and send mecanum motor PWM payloads.
 
@@ -78,6 +85,7 @@ def run_mecanum(poll_interval: float = 0.02):
     """
     last = None
     last_sent = None
+    current_fl = current_fr = current_rl = current_rr = 0.0
     try:
         while True:
             vals = controller_state.get_values()
@@ -97,7 +105,28 @@ def run_mecanum(poll_interval: float = 0.02):
                     rx = axis_from_byte(vals[2]) if len(vals) > 2 else 0.0
                     ry = axis_from_byte(vals[3], invert_y=True) if len(vals) > 3 else 0.0
 
-                fl, fr, rl, rr = compute_wheel_speeds(lx, ly, rx)
+                target_fl, target_fr, target_rl, target_rr = compute_wheel_speeds(lx, ly, rx)
+
+                # 目標速度が下がるときだけ、少しずつ減速する
+                step = 0.08
+                if abs(target_fl) < abs(current_fl):
+                    current_fl = _approach(current_fl, target_fl, step)
+                else:
+                    current_fl = target_fl
+                if abs(target_fr) < abs(current_fr):
+                    current_fr = _approach(current_fr, target_fr, step)
+                else:
+                    current_fr = target_fr
+                if abs(target_rl) < abs(current_rl):
+                    current_rl = _approach(current_rl, target_rl, step)
+                else:
+                    current_rl = target_rl
+                if abs(target_rr) < abs(current_rr):
+                    current_rr = _approach(current_rr, target_rr, step)
+                else:
+                    current_rr = target_rr
+
+                fl, fr, rl, rr = current_fl, current_fr, current_rl, current_rr
                 payload = speeds_to_pwm_payload(fl, fr, rl, rr)
 
                 # もし全輪の絶対値がデッドゾーン未満ならペイロードを全ゼロにする
