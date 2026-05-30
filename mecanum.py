@@ -14,6 +14,12 @@ from lib.afs_uart import afs_send
 from lib import controller_state
 
 
+MAX_PWM = 255
+
+# 出力が大きい場合はここを変更する。0.70 で従来比70%。
+OUTPUT_SCALE = 0.70
+
+
 def axis_from_byte(b, invert_y: bool = False) -> float:
     """Convert unsigned 0..255 byte to -1.0..1.0 axis.
 
@@ -47,7 +53,17 @@ def compute_wheel_speeds(lx: float, ly: float, rx: float) -> Tuple[float, float,
     return fl / m, fr / m, rl / m, rr / m
 
 
-def _speed_to_pwm_pair(s: float, dead: float = 0.12) -> Tuple[int, int]:
+def scale_pwm(pwm: float, output_scale: float = OUTPUT_SCALE) -> int:
+    """Scale and clamp PWM value to 0..255."""
+    scaled = int(round(float(pwm) * output_scale))
+    return max(0, min(MAX_PWM, scaled))
+
+
+def _speed_to_pwm_pair(
+    s: float,
+    dead: float = 0.12,
+    output_scale: float = OUTPUT_SCALE,
+) -> Tuple[int, int]:
     """Convert -1.0..1.0 speed to (forward_pwm, reverse_pwm) 0..255.
 
     - positive s -> forward active
@@ -57,16 +73,23 @@ def _speed_to_pwm_pair(s: float, dead: float = 0.12) -> Tuple[int, int]:
     v = max(-1.0, min(1.0, s))
     if abs(v) < dead:
         return 0, 0
-    pwm = int(round(abs(v) * 255))
+    pwm = scale_pwm(abs(v) * MAX_PWM, output_scale)
     return (pwm, 0) if v > 0 else (0, pwm)
 
 
-def speeds_to_pwm_payload(fl: float, fr: float, rl: float, rr: float, dead: float = 0.12) -> List[int]:
+def speeds_to_pwm_payload(
+    fl: float,
+    fr: float,
+    rl: float,
+    rr: float,
+    dead: float = 0.12,
+    output_scale: float = OUTPUT_SCALE,
+) -> List[int]:
     """Build 8-byte payload (forward,reverse pairs) from four wheel speeds."""
-    fl_f, fl_r = _speed_to_pwm_pair(fl, dead)
-    fr_f, fr_r = _speed_to_pwm_pair(fr, dead)
-    rl_f, rl_r = _speed_to_pwm_pair(rl, dead)
-    rr_f, rr_r = _speed_to_pwm_pair(rr, dead)
+    fl_f, fl_r = _speed_to_pwm_pair(fl, dead, output_scale)
+    fr_f, fr_r = _speed_to_pwm_pair(fr, dead, output_scale)
+    rl_f, rl_r = _speed_to_pwm_pair(rl, dead, output_scale)
+    rr_f, rr_r = _speed_to_pwm_pair(rr, dead, output_scale)
     return [fl_f, fl_r, fr_f, fr_r, rl_f, rl_r, rr_f, rr_r]
 
 

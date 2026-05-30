@@ -48,7 +48,7 @@ def run_mecanum_override(poll_interval: float = 0.02):
                 ry = mecanum.axis_from_byte(vals[3], invert_y=True) if len(vals) > 3 else 0.0
 
             # 特別処理: axis[5] (右スティックX) が -0.5 より大きければ
-            # 全輪に強度128で送信する
+            # 全輪に強度128を現在の出力倍率で調整して送信する
             special_condition = False
             if len(vals) >= 6:
                 try:
@@ -57,8 +57,9 @@ def run_mecanum_override(poll_interval: float = 0.02):
                     special_condition = False
 
             if special_condition:
-                payload = [128, 0, 128, 0, 128, 0, 128, 0]
-                print('[SPECIAL] detected axis[5] > -0.5 — sending all 128')
+                pwm = mecanum.scale_pwm(128)
+                payload = [pwm, 0, pwm, 0, pwm, 0, pwm, 0]
+                print('[SPECIAL] detected axis[5] > -0.5 — sending all %d' % pwm)
                 try:
                     afs_send(0, payload)
                     last_sent = list(payload)
