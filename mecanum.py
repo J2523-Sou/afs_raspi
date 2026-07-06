@@ -66,7 +66,7 @@ def run_mecanum(poll_interval: float = 0.02):
     # 1.0 : 一瞬で追従（元の挙動と同じ）
     # 0.1 : 毎ループ、目標値との差の10%ずつ近づく（滑らかに加減速・停止する）
     # 0.01: 非常にゆっくり時間をかけて加減速・停止する
-    RESPONSE_SPEED = 0.15 
+    RESPONSE_SPEED = 0.25
 
     last_sent = None
     
