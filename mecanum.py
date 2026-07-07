@@ -53,7 +53,7 @@ def speeds_to_pwm_payload(fl: float, fr: float, rl: float, rr: float, dead: floa
 
 
 def run_mecanum(poll_interval: float = 0.02):
-    """Poll `controller_state.get_values()` and send mecanum motor PWM payloads."""
+    """`controller_state.get_values()` をポーリングしてメカナムモーター PWM ペイロードを送信する。"""
     
     # === 【変更】ロボットの現在の内部的な状態（現在値）を保持する変数 ===
     cur_lx = 0.0

@@ -7,7 +7,7 @@ except Exception:
 
 from lib import controller_state
 
-# GPIO
+# GPIO（ピン）
 led1 = 17
 h = None
 if lgpio is not None:
@@ -39,14 +39,14 @@ def run_receiver():
     try:
         while True:
 
-            #Header
+            # ヘッダー
             head = conn.recv(1)
             if not head:
                 break
             if head[0] != 0xAA:
                 continue
 
-            # Get 7Byte data
+            # 7バイトのデータを取得
             receive = conn.recv(7)
             if len(receive) != 7:
                 continue
