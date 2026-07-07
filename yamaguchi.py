@@ -51,6 +51,9 @@ def _get_values() -> List[int]:
 def _button_pressed(value: int, mask: int) -> bool:
     return (int(value) & mask) != 0
 
+DIR_FORWARD = 255
+DIR_REVERSE = 0
+
 
 def _motor_from_buttons(forward: bool, reverse: bool) -> Tuple[int, int]:
     """Return (pwm, dir) for one motor.
@@ -60,9 +63,9 @@ def _motor_from_buttons(forward: bool, reverse: bool) -> Tuple[int, int]:
     - 0: reverse
     """
     if forward:
-        return 255, 255
+        return 255, DIR_FORWARD
     if reverse:
-        return 255, 0
+        return 255, DIR_REVERSE
     return 0, 0
 
 
