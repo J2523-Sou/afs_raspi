@@ -28,11 +28,15 @@ Servo buttons are ignored for now.
 
 from __future__ import annotations
 
+import os
 import time
 from typing import List, Tuple
 
 from lib.afs_uart import afs_send
 from lib import controller_state
+
+
+UART_DEVICE = os.environ.get("YAMAGUCHI_UART_DEVICE", "/dev/ttyAMA1")
 
 
 def _u8(value: int) -> int:
@@ -92,6 +96,7 @@ def _build_payload_from_controller(vals: List[int]) -> List[int]:
 def run_yamaguchi(poll_interval: float = 0.02):
     """Poll controller input and send the Cytron command payload via UART."""
     last_sent = None
+    print("[UART INIT] Yamaguchi uses", UART_DEVICE)
 
     try:
         while True:
@@ -106,12 +111,13 @@ def run_yamaguchi(poll_interval: float = 0.02):
                     print("[UART SEND] idle payload:", payload)
                 else:
                     print("[UART SEND] cytron payload:", payload)
-                try:
-                    afs_send(1, payload)
-                    last_sent = list(payload)
-                    print("[UART SEND] afs_send OK")
-                except Exception as e:
-                    print("[UART SEND] afs_send failed:", repr(e))
+                last_sent = list(payload)
+
+            try:
+                afs_send(UART_DEVICE, payload)
+                print("[UART SEND] afs_send OK ->", UART_DEVICE)
+            except Exception as e:
+                print("[UART SEND] afs_send failed ->", UART_DEVICE, repr(e))
 
             time.sleep(poll_interval)
     except KeyboardInterrupt:
