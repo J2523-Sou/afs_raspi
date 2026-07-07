@@ -28,7 +28,7 @@ try:
             lx, ly = result
             print(f"Xの値:{lx}, Yの値:{ly}")
             payload = [lx, ly, 0, 0, 0, 0, 0, 0]
-            afs_send(0, payload)
+            afs_send(1, payload)
             time.sleep(0.02)
         else:
             print("コントローラーの値が取得できませんでした。")
