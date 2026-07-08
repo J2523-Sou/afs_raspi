@@ -1,30 +1,30 @@
-"""山口コントローラ側。
+"""Yamaguchi controller side.
 
-このモジュールは、「mecanum.py」と同じ全体的な構成になっています：
+This module follows the same overall shape as ``mecanum.py``:
 
-- 「lib.controller_state」をポーリングする
-- 8バイトのUARTペイロードを構築する
-- 「afs_send」で送信する
+- poll ``lib.controller_state``
+- build an 8-byte UART payload
+- send it with ``afs_send``
 
-このロボットの場合、最初の4バイトは次のように使用されます：
+For this robot, the first four bytes are used like this:
 
-1. Cytron 01 PWM
-2. Cytron 01 DIR
-3. Cytron 02 PWM
-4. Cytron 02 DIR
+1. Sitechiron 01 PWM
+2. Sitechiron 01 DIR
+3. Sitechiron 02 PWM
+4. Sitechiron 02 DIR
 
-残りの4バイトは、要求されたデフォルトの
-``payload = [1] * 8`` に合わせるため、当面は「1」のままにしておきます。
+The remaining bytes are reserved for servo control.
 
-ボタンのマッピングは、既存の送信側パケット形式に基づいています：
+Button mapping comes from the existing sender-side packet format:
 
-- 上    -> Cytron 01 前進
-- 下  -> Cytron 01 後退
-- 左  -> Cytron 02 前進
-- 右  -> Cytron 02 後退
+- Up    -> Sitechiron 01 forward
+- Down  -> Sitechiron 01 reverse
+- Left  -> Sitechiron 02 forward
+- Right -> Sitechiron 02 reverse
+- Circle -> servo open/close toggle
 
-サーボボタンは、現時点では無視されます。
-
+The servo is not wired yet, so its command is represented in the unused
+payload bytes. PWM255 is treated as the 5V-equivalent "on" state.
 """
 
 from __future__ import annotations
@@ -41,7 +41,6 @@ UART_DEVICE = os.environ.get("YAMAGUCHI_UART_DEVICE", "/dev/ttyAMA1")
 
 
 def _u8(value: int) -> int:
-    # 値を0-255のバイト範囲にクリップ（PWMやDIR値が有効な範囲に収まるようにする）
     return max(0, min(255, int(value)))
 
 
@@ -51,81 +50,77 @@ def _get_values() -> List[int]:
 
 
 def _button_pressed(value: int, mask: int) -> bool:
-    # ビット演算でマスク位置のビットが立っているかチェック（ボタンが押されているか判定）
     return (int(value) & mask) != 0
 
-# モーターの回転方向（PWM信号値として255=前進, 0=後退）
-DIR_FORWARD = 255
-DIR_REVERSE = 0
+
+def _circle_pressed(vals: List[int]) -> bool:
+    # Circle is bit 1 in the first data byte sent by the controller.
+    return _button_pressed(vals[0] if len(vals) > 0 else 0, 0b00000010)
 
 
 def _motor_from_buttons(forward: bool, reverse: bool) -> Tuple[int, int]:
-    """モーター1つの(pwm, dir)を返す。
+    """Return (pwm, dir) for one motor.
 
-    方向エンコーディングはシンプルに保つ:
-    - 255: 前進
-    - 0: 後退
+    Direction encoding is kept simple:
+    - 255: forward
+    - 0: reverse
     """
     if forward:
-        return 200, DIR_FORWARD
+        return 255, 255
     if reverse:
-        return 200, DIR_REVERSE
+        return 255, 0
     return 0, 0
 
 
-def _build_payload_from_controller(vals: List[int]) -> List[int]:
-    """controller_state値を8バイトのUARTペイロードに変換する。
-
-    既存の送信側フォーマットは以下を使用します:
-    - vals[1] ビット 3: 上
-    - vals[1] ビット 4: 下
-    - vals[1] ビット 5: 左
-    - vals[1] ビット 6: 右
-    """
-    # デフォルトペイロード：最初の4バイトはモーター制御、残り4バイトはダミー値
+def _build_payload_from_controller(vals: List[int], servo_open: bool) -> List[int]:
+    """Convert controller_state values to the 8-byte UART payload."""
     payload = [1] * 8
 
-    # vals[1]はコントローラーのボタン状態を示すバイト
     button_bytes = vals[1] if len(vals) > 1 else 0
-    # 各ボタン状態をビットマスクで抽出（ビット3,4,5,6が上下左右に対応）
-    up = _button_pressed(button_bytes, 0b00001000)    # ビット3: 上ボタン
-    down = _button_pressed(button_bytes, 0b00010000)   # ビット4: 下ボタン
-    left = _button_pressed(button_bytes, 0b00100000)   # ビット5: 左ボタン
-    right = _button_pressed(button_bytes, 0b01000000)  # ビット6: 右ボタン
+    up = _button_pressed(button_bytes, 0b00001000)
+    down = _button_pressed(button_bytes, 0b00010000)
+    left = _button_pressed(button_bytes, 0b00100000)
+    right = _button_pressed(button_bytes, 0b01000000)
 
-    # モーター1（上下ボタン）とモーター2（左右ボタン）の制御値を計算
     m1_pwm, m1_dir = _motor_from_buttons(up, down)
     m2_pwm, m2_dir = _motor_from_buttons(left, right)
 
-    # ペイロードに値を設定（最初の4バイトがモーター制御）
-    payload[0] = _u8(m1_pwm)      # Cytron 01 PWM
-    payload[1] = _u8(m1_dir)      # Cytron 01 DIR（方向）
-    payload[2] = _u8(m2_pwm)      # Cytron 02 PWM
-    payload[3] = _u8(m2_dir)      # Cytron 02 DIR（方向）
+    payload[0] = _u8(m1_pwm)
+    payload[1] = _u8(m1_dir)
+    payload[2] = _u8(m2_pwm)
+    payload[3] = _u8(m2_dir)
+
+    # Servo placeholder.
+    # payload[4] = 255 -> 5V equivalent "on"
+    # payload[5] = 255 -> open, 0 -> close
+    payload[4] = 255
+    payload[5] = 255 if servo_open else 0
+
     return payload
 
 
 def run_yamaguchi(poll_interval: float = 0.02):
-    """コントローラー入力をポーリングして、Cytronコマンドペイロードをシリアル経由で送信する。"""
+    """Poll controller input and send the Cytron command payload via UART."""
+    servo_open = False
+    last_circle = False
     last_sent = None
+
     print("[UART INIT] Yamaguchi uses", UART_DEVICE)
 
     try:
         while True:
             vals = _get_values()
-            # コントローラー入力がない場合はアイドル状態のペイロード（全て1）を使用
-            if not vals:
-                payload = [1] * 8
-            else:
-                payload = _build_payload_from_controller(vals)
 
-            # ペイロードが前回と異なる場合のみ送信（無駄な送信を避ける）
+            circle_now = _circle_pressed(vals)
+            if circle_now and not last_circle:
+                servo_open = not servo_open
+                print("[SERVO] toggled:", "open" if servo_open else "close")
+            last_circle = circle_now
+
+            payload = _build_payload_from_controller(vals, servo_open)
+
             if payload != last_sent:
-                if payload == [1] * 8:
-                    print("[UART SEND] idle payload:", payload)
-                else:
-                    print("[UART SEND] cytron payload:", payload)
-                # 次の比較用にペイロードのコピーを保存（リスト参照を避けるため）
+                print("[UART SEND] payload:", payload)
                 last_sent = list(payload)
 
             try:
@@ -139,7 +134,7 @@ def run_yamaguchi(poll_interval: float = 0.02):
         pass
 
 
-# 互換性のため、古いエントリーポイント名も使用可能にする
+# Keep the old entry-point name available for compatibility.
 run_receiver = run_yamaguchi
 
 
