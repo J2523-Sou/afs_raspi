@@ -1,30 +1,16 @@
 """Yamaguchi controller side.
 
-This module follows the same overall shape as ``mecanum.py``:
+Poll controller_state, build an 8-byte UART payload, and send it with afs_send.
 
-- poll ``lib.controller_state``
-- build an 8-byte UART payload
-- send it with ``afs_send``
-
-For this robot, the first four bytes are used like this:
-
+Payload layout:
 1. Sitechiron 01 PWM
 2. Sitechiron 01 DIR
 3. Sitechiron 02 PWM
 4. Sitechiron 02 DIR
-
-The remaining bytes are reserved for servo control.
-
-Button mapping comes from the existing sender-side packet format:
-
-- Up    -> Sitechiron 01 forward
-- Down  -> Sitechiron 01 reverse
-- Left  -> Sitechiron 02 forward
-- Right -> Sitechiron 02 reverse
-- Circle -> servo oscillation while held
-
-The servo is not wired yet, so its command is represented in the unused
-payload bytes. PWM255 is treated as the 5V-equivalent "on" state.
+5. Servo power placeholder
+6. Servo A/B position
+7. Reserved
+8. Reserved
 """
 
 from __future__ import annotations
@@ -38,6 +24,12 @@ from lib import controller_state
 
 
 UART_DEVICE = os.environ.get("YAMAGUCHI_UART_DEVICE", "/dev/ttyAMA1")
+
+# サーボ用の定数
+# A地点/B地点の位置を変えたいときはここだけ直す
+SERVO_POWER_PWM = 255
+SERVO_A_ANGLE = 5
+SERVO_B_ANGLE = 40
 
 
 def _u8(value: int) -> int:
@@ -54,17 +46,10 @@ def _button_pressed(value: int, mask: int) -> bool:
 
 
 def _circle_pressed(vals: List[int]) -> bool:
-    # Circle is bit 1 in the first data byte sent by the controller.
     return _button_pressed(vals[0] if len(vals) > 0 else 0, 0b00000010)
 
 
 def _motor_from_buttons(forward: bool, reverse: bool) -> Tuple[int, int]:
-    """Return (pwm, dir) for one motor.
-
-    Direction encoding is kept simple:
-    - 255: forward
-    - 0: reverse
-    """
     if forward:
         return 255, 255
     if reverse:
@@ -72,16 +57,7 @@ def _motor_from_buttons(forward: bool, reverse: bool) -> Tuple[int, int]:
     return 0, 0
 
 
-def _servo_sweep_value(now: float) -> int:
-    # Triangle-wave style sweep between two positions.
-    # This mirrors the old 5 <-> 40 example, but keeps it time-based.
-    period = 1.0
-    phase = (now % period) / period
-    return 5 if phase < 0.5 else 40
-
-
-def _build_payload_from_controller(vals: List[int], circle_held: bool, now: float) -> List[int]:
-    """Convert controller_state values to the 8-byte UART payload."""
+def _build_payload_from_controller(vals: List[int], servo_at_a: bool) -> List[int]:
     payload = [1] * 8
 
     button_bytes = vals[1] if len(vals) > 1 else 0
@@ -98,17 +74,15 @@ def _build_payload_from_controller(vals: List[int], circle_held: bool, now: floa
     payload[2] = _u8(m2_pwm)
     payload[3] = _u8(m2_dir)
 
-    # Servo placeholder.
-    # payload[4] = 255 -> 5V equivalent "on"
-    # payload[5] = position command while Circle is held
-    payload[4] = 255
-    payload[5] = _servo_sweep_value(now) if circle_held else 0
+    payload[4] = SERVO_POWER_PWM
+    payload[5] = SERVO_A_ANGLE if servo_at_a else SERVO_B_ANGLE
 
     return payload
 
 
 def run_yamaguchi(poll_interval: float = 0.02):
-    """Poll controller input and send the Cytron command payload via UART."""
+    servo_at_a = True
+    last_circle = False
     last_sent = None
 
     print("[UART INIT] Yamaguchi uses", UART_DEVICE)
@@ -118,10 +92,12 @@ def run_yamaguchi(poll_interval: float = 0.02):
             vals = _get_values()
 
             circle_now = _circle_pressed(vals)
-            if circle_now:
-                print("[SERVO] sweeping while Circle is held")
+            if circle_now and not last_circle:
+                servo_at_a = not servo_at_a
+                print("[SERVO] toggle:", "A地点" if servo_at_a else "B地点")
+            last_circle = circle_now
 
-            payload = _build_payload_from_controller(vals, circle_now, time.monotonic())
+            payload = _build_payload_from_controller(vals, servo_at_a)
 
             if payload != last_sent:
                 print("[UART SEND] payload:", payload)
@@ -138,7 +114,6 @@ def run_yamaguchi(poll_interval: float = 0.02):
         pass
 
 
-# Keep the old entry-point name available for compatibility.
 run_receiver = run_yamaguchi
 
 
