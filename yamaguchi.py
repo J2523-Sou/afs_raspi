@@ -67,9 +67,9 @@ def _motor_from_buttons(forward: bool, reverse: bool) -> Tuple[int, int]:
     - 0: 後退
     """
     if forward:
-        return 255, DIR_FORWARD
+        return 50, DIR_FORWARD
     if reverse:
-        return 255, DIR_REVERSE
+        return 50, DIR_REVERSE
     return 0, 0
 
 
