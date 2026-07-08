@@ -21,7 +21,7 @@ Button mapping comes from the existing sender-side packet format:
 - Down  -> Sitechiron 01 reverse
 - Left  -> Sitechiron 02 forward
 - Right -> Sitechiron 02 reverse
-- Circle -> servo open/close toggle
+- Circle -> servo oscillation while held
 
 The servo is not wired yet, so its command is represented in the unused
 payload bytes. PWM255 is treated as the 5V-equivalent "on" state.
@@ -72,7 +72,15 @@ def _motor_from_buttons(forward: bool, reverse: bool) -> Tuple[int, int]:
     return 0, 0
 
 
-def _build_payload_from_controller(vals: List[int], servo_open: bool) -> List[int]:
+def _servo_sweep_value(now: float) -> int:
+    # Triangle-wave style sweep between two positions.
+    # This mirrors the old 5 <-> 40 example, but keeps it time-based.
+    period = 1.0
+    phase = (now % period) / period
+    return 5 if phase < 0.5 else 40
+
+
+def _build_payload_from_controller(vals: List[int], circle_held: bool, now: float) -> List[int]:
     """Convert controller_state values to the 8-byte UART payload."""
     payload = [1] * 8
 
@@ -92,17 +100,15 @@ def _build_payload_from_controller(vals: List[int], servo_open: bool) -> List[in
 
     # Servo placeholder.
     # payload[4] = 255 -> 5V equivalent "on"
-    # payload[5] = 255 -> open, 0 -> close
+    # payload[5] = position command while Circle is held
     payload[4] = 255
-    payload[5] = 255 if servo_open else 0
+    payload[5] = _servo_sweep_value(now) if circle_held else 0
 
     return payload
 
 
 def run_yamaguchi(poll_interval: float = 0.02):
     """Poll controller input and send the Cytron command payload via UART."""
-    servo_open = False
-    last_circle = False
     last_sent = None
 
     print("[UART INIT] Yamaguchi uses", UART_DEVICE)
@@ -112,12 +118,10 @@ def run_yamaguchi(poll_interval: float = 0.02):
             vals = _get_values()
 
             circle_now = _circle_pressed(vals)
-            if circle_now and not last_circle:
-                servo_open = not servo_open
-                print("[SERVO] toggled:", "open" if servo_open else "close")
-            last_circle = circle_now
+            if circle_now:
+                print("[SERVO] sweeping while Circle is held")
 
-            payload = _build_payload_from_controller(vals, servo_open)
+            payload = _build_payload_from_controller(vals, circle_now, time.monotonic())
 
             if payload != last_sent:
                 print("[UART SEND] payload:", payload)
