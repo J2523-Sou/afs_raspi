@@ -29,7 +29,7 @@ UART_DEVICE = os.environ.get("YAMAGUCHI_UART_DEVICE", "/dev/ttyAMA1")
 # A地点/B地点の位置を変えたいときはここだけ直す
 SERVO_POWER_PWM = 255
 SERVO_A_ANGLE = 5
-SERVO_B_ANGLE = 40
+SERVO_B_ANGLE = 100
 
 
 def _u8(value: int) -> int:
