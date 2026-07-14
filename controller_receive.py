@@ -21,6 +21,38 @@ if lgpio is not None:
 HOST = "0.0.0.0"
 PORT = 5001
 
+# 0xAA は従来の7バイト形式、0xAB は末尾にL2/R2を追加した形式。
+# 拡張形式: [buttons0, buttons1, buttons2, lx, ly, rx, ry, l2, r2]
+FRAME_LENGTHS = {
+    0xAA: 7,
+    0xAB: 9,
+}
+
+
+def _recv_exact(conn, length):
+    """TCPからlengthバイトを、分割受信を考慮して読み込む。"""
+    chunks = bytearray()
+    while len(chunks) < length:
+        chunk = conn.recv(length - len(chunks))
+        if not chunk:
+            return None
+        chunks.extend(chunk)
+    return bytes(chunks)
+
+
+def _receive_frame(conn):
+    """次の有効なコントローラーフレームを受信する。"""
+    while True:
+        head = _recv_exact(conn, 1)
+        if head is None:
+            return None
+
+        data_length = FRAME_LENGTHS.get(head[0])
+        if data_length is None:
+            continue
+
+        return _recv_exact(conn, data_length)
+
 
 def run_receiver():
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -38,23 +70,17 @@ def run_receiver():
 
     try:
         while True:
-
-            # ヘッダー
-            head = conn.recv(1)
-            if not head:
+            receive = _receive_frame(conn)
+            if receive is None:
                 break
-            if head[0] != 0xAA:
-                continue
 
-            # 7バイトのデータを取得
-            receive = conn.recv(7)
-            if len(receive) != 7:
-                continue
             data = list(receive)
             controller_state.set_values(data)
 
             time.sleep(0.0001)
     finally:
+        # 切断後に最後の入力（特にトリガー）が残らないようにする。
+        controller_state.set_values([])
         conn.close()
         s.close()
 

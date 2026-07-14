@@ -57,7 +57,7 @@ def run_mecanum_override(poll_interval: float = 0.02):
                     special_condition = False
 
             if special_condition:
-                pwm = mecanum.scale_pwm(128)
+                pwm = 128
                 payload = [pwm, 0, pwm, 0, pwm, 0, pwm, 0]
                 print('[SPECIAL] detected axis[5] > -0.5 — sending all %d' % pwm)
                 try:
