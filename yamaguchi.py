@@ -105,7 +105,7 @@ def run_yamaguchi(poll_interval: float = 0.02):
 
             try:
                 afs_send(UART_DEVICE, payload)
-                print("[UART SEND] afs_send OK ->", UART_DEVICE)
+                # print("[UART SEND] afs_send OK ->", UART_DEVICE)
             except Exception as e:
                 print("[UART SEND] afs_send failed ->", UART_DEVICE, repr(e))
 
