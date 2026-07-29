@@ -3,8 +3,8 @@
 提供する関数:
 - `axis_from_byte(b, invert_y=False)` : バイト -> -1..1
 - `compute_wheel_speeds(lx, ly, rx)` : メカナムの4輪速度 (-1..1)
-- `speeds_to_pwm_payload(fl, fr, rl, rr, dead=0.12)` : 4輪速度 -> 8バイト PWM ペイロード
-- `run_mecanum(poll_interval=0.02)` : `controller_state` をポーリングして UART 送信
+- `speeds_to_pwm_payload(fl, fr, rl, rr, dead=0.12, max_speed=1.0)` : 4輪速度 -> 8バイト PWM ペイロード
+- `run_mecanum(poll_interval=0.02, max_speed=1.0)` : `controller_state` をポーリングして UART 送信
 """
 
 from typing import List, Tuple
@@ -36,40 +36,55 @@ def compute_wheel_speeds(lx: float, ly: float, rx: float) -> Tuple[float, float,
     return fl / m, fr / m, rl / m, rr / m
 
 
-def _speed_to_pwm_pair(s: float, dead: float = 0.12) -> Tuple[int, int]:
+def _speed_to_pwm_pair(s: float, dead: float = 0.12, max_speed: float = 1.0) -> Tuple[int, int]:
     v = max(-1.0, min(1.0, s))
     if abs(v) < dead:
         return 0, 0
-    pwm = int(round(abs(v) * 255))
+    # max_speed (0.0〜1.0) : 出力できる最大PWM値を制限する係数
+    max_speed = max(0.0, min(1.0, max_speed))
+    pwm = int(round(abs(v) * 255 * max_speed))
     return (pwm, 0) if v > 0 else (0, pwm)
 
 
-def speeds_to_pwm_payload(fl: float, fr: float, rl: float, rr: float, dead: float = 0.12) -> List[int]:
-    fl_f, fl_r = _speed_to_pwm_pair(fl, dead)
-    fr_f, fr_r = _speed_to_pwm_pair(fr, dead)
-    rl_f, rl_r = _speed_to_pwm_pair(rl, dead)
-    rr_f, rr_r = _speed_to_pwm_pair(rr, dead)
+def speeds_to_pwm_payload(fl: float, fr: float, rl: float, rr: float, dead: float = 0.12,
+                           max_speed: float = 1.0) -> List[int]:
+    """4輪速度 -> 8バイト PWM ペイロード
+
+    max_speed : 0.0〜1.0 の範囲で最大出力PWMを制限する係数。
+                1.0 = フル出力(255)まで許可、0.5 = 最大でも127程度に制限。
+    """
+    fl_f, fl_r = _speed_to_pwm_pair(fl, dead, max_speed)
+    fr_f, fr_r = _speed_to_pwm_pair(fr, dead, max_speed)
+    rl_f, rl_r = _speed_to_pwm_pair(rl, dead, max_speed)
+    rr_f, rr_r = _speed_to_pwm_pair(rr, dead, max_speed)
     return [fl_f, fl_r, fr_f, fr_r, rl_f, rl_r, rr_f, rr_r]
 
 
-def run_mecanum(poll_interval: float = 0.02):
-    """`controller_state.get_values()` をポーリングしてメカナムモーター PWM ペイロードを送信する。"""
-    
-    # === 【変更】ロボットの現在の内部的な状態（現在値）を保持する変数 ===
+def run_mecanum(poll_interval: float = 0.02, max_speed: float = 1.0):
+    """`controller_state.get_values()` をポーリングしてメカナムモーター PWM ペイロードを送信する。
+
+    max_speed : 0.0〜1.0 の範囲で最大スピード（最大PWM出力）を固定する係数。
+                例えば 0.5 にすると、フルスティック入力でもPWMは最大約127までしか出ない。
+    """
+
+    # === ロボットの現在の内部的な状態（現在値）を保持する変数 ===
     cur_lx = 0.0
     cur_ly = 0.0
     cur_rx = 0.0
     cur_ry = 0.0
 
-    # === 【追加】加減速の「止まるスピード」を調整するパラメータ ===
+    # === 加減速の「止まるスピード」を調整するパラメータ ===
     # 0.0〜1.0 の範囲で指定します。
     # 1.0 : 一瞬で追従（元の挙動と同じ）
     # 0.1 : 毎ループ、目標値との差の10%ずつ近づく（滑らかに加減速・停止する）
     # 0.01: 非常にゆっくり時間をかけて加減速・停止する
     RESPONSE_SPEED = 0.25
 
+    # 最大スピード（最大PWM出力）の上限。0.0〜1.0の範囲でクリップしておく
+    max_speed = max(0.0, min(1.0, max_speed))
+
     last_sent = None
-    
+
     try:
         while True:
             vals = controller_state.get_values()
@@ -86,7 +101,7 @@ def run_mecanum(poll_interval: float = 0.02):
                     tgt_rx = axis_from_byte(vals[2]) if len(vals) > 2 else 0.0
                     tgt_ry = axis_from_byte(vals[3], invert_y=True) if len(vals) > 3 else 0.0
 
-                # 2. 【重要】目標値に向けて、現在値をゆっくり近づける計算
+                # 2. 目標値に向けて、現在値をゆっくり近づける計算
                 # (目標値 - 現在値) に割合をかけた分だけ、現在値を増減させる
                 cur_lx += (tgt_lx - cur_lx) * RESPONSE_SPEED
                 cur_ly += (tgt_ly - cur_ly) * RESPONSE_SPEED
@@ -95,7 +110,8 @@ def run_mecanum(poll_interval: float = 0.02):
 
                 # 3. 滑らかに変化する「現在値」を使って4輪の速度を計算
                 fl, fr, rl, rr = compute_wheel_speeds(cur_lx, cur_ly, cur_rx)
-                payload = speeds_to_pwm_payload(fl, fr, rl, rr)
+                # max_speed で最大PWM出力を固定する
+                payload = speeds_to_pwm_payload(fl, fr, rl, rr, max_speed=max_speed)
 
                 # 全輪の絶対値がデッドゾーン未満ならペイロードを全ゼロにする
                 dead = 0.12
@@ -108,7 +124,7 @@ def run_mecanum(poll_interval: float = 0.02):
                         print("[UART SEND] sending all zeros to stop motors")
                     else:
                         print("[AXIS] cur_lx=%.3f cur_ly=%.3f cur_rx=%.3f" % (cur_lx, cur_ly, cur_rx))
-                        print("[MOTORS] fl=%.3f fr=%.3f rl=%.3f rr=%.3f" % (fl, fr, rl, rr))
+                        print("[MOTORS] fl=%.3f fr=%.3f rl=%.3f rr=%.3f (max_speed=%.2f)" % (fl, fr, rl, rr, max_speed))
                         print("[UART SEND] mecanum payload:", payload)
 
                     try:
@@ -117,13 +133,15 @@ def run_mecanum(poll_interval: float = 0.02):
                         print("[UART SEND] afs_send OK")
                     except Exception as e:
                         print("[UART SEND] afs_send failed:", repr(e))
-            
+
             # 毎ループの周期を保つために sleep は常に実行
             time.sleep(poll_interval)
-            
+
     except KeyboardInterrupt:
         pass
 
 
 if __name__ == "__main__":
-    run_mecanum()
+    # ここで最大スピードを調整できます（0.0〜1.0）
+    MAX_SPEED = 0.1
+    run_mecanum(max_speed=MAX_SPEED)
