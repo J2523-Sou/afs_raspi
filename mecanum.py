@@ -14,6 +14,9 @@ from lib.afs_uart import afs_send
 from lib import controller_state
 
 
+INPUT_DEADZONE = 0.08
+
+
 def axis_from_byte(b, invert_y: bool = False) -> float:
     try:
         bi = int(b)
@@ -24,6 +27,11 @@ def axis_from_byte(b, invert_y: bool = False) -> float:
     else:
         val = (bi - 128) / 127.0
     return max(-1.0, min(1.0, val))
+
+
+def apply_input_deadzone(value: float, deadzone: float = INPUT_DEADZONE) -> float:
+    """中心付近の軸ずれをゼロにして、直進・横移動時の4輪出力を揃える。"""
+    return 0.0 if abs(value) < deadzone else value
 
 
 def compute_wheel_speeds(lx: float, ly: float, rx: float) -> Tuple[float, float, float, float]:
@@ -100,6 +108,14 @@ def run_mecanum(poll_interval: float = 0.02, max_speed: float = 1.0):
                     tgt_ly = axis_from_byte(vals[1], invert_y=True) if len(vals) > 1 else 0.0
                     tgt_rx = axis_from_byte(vals[2]) if len(vals) > 2 else 0.0
                     tgt_ry = axis_from_byte(vals[3], invert_y=True) if len(vals) > 3 else 0.0
+
+                # スティック中心のわずかなずれを除去する。
+                # 前後操作に横移動が、左右操作に前後移動が混ざるのを防ぎ、
+                # 直進・横移動では4輪のPWM絶対値を同じにする。
+                tgt_lx = apply_input_deadzone(tgt_lx)
+                tgt_ly = apply_input_deadzone(tgt_ly)
+                tgt_rx = apply_input_deadzone(tgt_rx)
+                tgt_ry = apply_input_deadzone(tgt_ry)
 
                 # 2. 目標値に向けて、現在値をゆっくり近づける計算
                 # (目標値 - 現在値) に割合をかけた分だけ、現在値を増減させる
