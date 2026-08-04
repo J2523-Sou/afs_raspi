@@ -133,6 +133,21 @@ def run_mecanum(poll_interval: float = 0.02, max_speed: float = 1.0):
                         print("[UART SEND] afs_send OK")
                     except Exception as e:
                         print("[UART SEND] afs_send failed:", repr(e))
+            else:
+                # 未接続・切断・入力タイムアウト時は必ず停止指令を送る。
+                cur_lx = 0.0
+                cur_ly = 0.0
+                cur_rx = 0.0
+                cur_ry = 0.0
+                payload = [0] * 8
+                if payload != last_sent:
+                    print("[FAILSAFE] controller input unavailable; stopping motors")
+                    try:
+                        afs_send(0, payload)
+                        last_sent = list(payload)
+                        print("[UART SEND] stop command OK")
+                    except Exception as e:
+                        print("[UART SEND] stop command failed:", repr(e))
 
             # 毎ループの周期を保つために sleep は常に実行
             time.sleep(poll_interval)

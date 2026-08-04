@@ -1,4 +1,3 @@
-import time
 import socket
 try:
     import lgpio
@@ -22,41 +21,57 @@ HOST = "0.0.0.0"
 PORT = 5001
 
 
-def run_receiver():
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.bind((HOST, PORT))
-    s.listen(1)
-
-    print("Waiting for connection...")
-    conn, addr = s.accept()
-    print("Connected from", addr)
+def _set_led(value):
     if h is not None:
         try:
-            lgpio.gpio_write(h, led1, 1)
+            lgpio.gpio_write(h, led1, value)
         except Exception:
             pass
 
-    try:
+
+def _recv_exact(conn, size):
+    data = bytearray()
+    while len(data) < size:
+        chunk = conn.recv(size - len(data))
+        if not chunk:
+            return None
+        data.extend(chunk)
+    return bytes(data)
+
+
+def run_receiver():
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
+        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        server.bind((HOST, PORT))
+        server.listen(1)
+
         while True:
+            print("Waiting for connection...")
+            conn, addr = server.accept()
+            print("Connected from", addr)
+            _set_led(1)
 
-            # ヘッダー
-            head = conn.recv(1)
-            if not head:
-                break
-            if head[0] != 0xAA:
-                continue
+            try:
+                with conn:
+                    while True:
+                        # ヘッダーを探し、その後の7バイトが揃うまで受信する。
+                        head = _recv_exact(conn, 1)
+                        if head is None:
+                            break
+                        if head[0] != 0xAA:
+                            continue
 
-            # 7バイトのデータを取得
-            receive = conn.recv(7)
-            if len(receive) != 7:
-                continue
-            data = list(receive)
-            controller_state.set_values(data)
-
-            time.sleep(0.0001)
-    finally:
-        conn.close()
-        s.close()
+                        receive = _recv_exact(conn, 7)
+                        if receive is None:
+                            break
+                        controller_state.set_values(receive)
+            except OSError as e:
+                print("Controller connection error:", e)
+            finally:
+                # 切断直後から古い操作値を使わせない。
+                controller_state.clear_values()
+                _set_led(0)
+                print("Controller disconnected")
 
 
 if __name__ == "__main__":
