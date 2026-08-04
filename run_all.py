@@ -2,6 +2,7 @@ import threading
 import time
 
 from controller_receive import run_receiver
+from air_cylinder import run_air_cylinder
 from mecanum import run_mecanum
 from zoukin_souten import run_zoukin_souten
 
@@ -11,6 +12,7 @@ MAX_SPEED = 0.4
 
 def main():
     controller_receiver = threading.Thread(target=run_receiver, daemon=True)
+    air_cylinder = threading.Thread(target=run_air_cylinder, daemon=True)
     mecanum = threading.Thread(
         target=run_mecanum,
         kwargs={"max_speed": MAX_SPEED},
@@ -19,6 +21,7 @@ def main():
     zoukin_souten = threading.Thread(target=run_zoukin_souten, daemon=True)
 
     controller_receiver.start()
+    air_cylinder.start()
     mecanum.start()
     zoukin_souten.start()
 
