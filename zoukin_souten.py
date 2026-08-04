@@ -1,4 +1,4 @@
-"""Yamaguchi controller side.
+"""Zoukin Souten controller side.
 
 Poll controller_state, build an 8-byte UART payload, and send it with afs_send.
 
@@ -23,7 +23,7 @@ from lib.afs_uart import afs_send
 from lib import controller_state
 
 
-UART_DEVICE = os.environ.get("YAMAGUCHI_UART_DEVICE", "/dev/ttyAMA1")
+UART_DEVICE = os.environ.get("ZOUKIN_SOUTEN_UART_DEVICE", "/dev/ttyAMA1")
 
 # サーボ用の定数
 # A地点/B地点の位置を変えたいときはここだけ直す
@@ -80,12 +80,12 @@ def _build_payload_from_controller(vals: List[int], servo_at_a: bool) -> List[in
     return payload
 
 
-def run_yamaguchi(poll_interval: float = 0.02):
+def run_zoukin_souten(poll_interval: float = 0.02):
     servo_at_a = True
     last_circle = False
     last_sent = None
 
-    print("[UART INIT] Yamaguchi uses", UART_DEVICE)
+    print("[UART INIT] Zoukin Souten uses", UART_DEVICE)
 
     try:
         while True:
@@ -114,8 +114,8 @@ def run_yamaguchi(poll_interval: float = 0.02):
         pass
 
 
-run_receiver = run_yamaguchi
+run_receiver = run_zoukin_souten
 
 
 if __name__ == "__main__":
-    run_yamaguchi()
+    run_zoukin_souten()

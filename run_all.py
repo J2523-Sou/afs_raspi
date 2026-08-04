@@ -3,7 +3,7 @@ import time
 
 from controller_receive import run_receiver
 from mecanum import run_mecanum
-from yamaguchi import run_yamaguchi
+from zoukin_souten import run_zoukin_souten
 
 # ここで最大スピードを調整します（0.0〜1.0）
 MAX_SPEED = 0.4
@@ -16,11 +16,11 @@ def main():
         kwargs={"max_speed": MAX_SPEED},
         daemon=True,
     )
-    yamaguchi = threading.Thread(target=run_yamaguchi, daemon=True)
+    zoukin_souten = threading.Thread(target=run_zoukin_souten, daemon=True)
 
     controller_receiver.start()
     mecanum.start()
-    yamaguchi.start()
+    zoukin_souten.start()
 
     try:
         while True:
