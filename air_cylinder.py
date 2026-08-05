@@ -24,7 +24,9 @@ BUTTON_BYTE_INDEX = int(os.environ.get("AIR_CYLINDER_BUTTON_BYTE_INDEX", "1"))
 BUTTON_MASK_L = int(os.environ.get("AIR_CYLINDER_BUTTON_MASK_L", "2"), 0)
 BUTTON_MASK_R = int(os.environ.get("AIR_CYLINDER_BUTTON_MASK_R", "4"), 0)
 
-SOLENOID_OUTPUT_INDEX = 0
+# PIC側ではRB4(SOL1)がPWM2 Slice1 Output2に割り当てられており、
+# rx_buffer[4]、すなわちPythonペイロードの4番目(index 3)で駆動される。
+SOLENOID_OUTPUT_INDEX = 3
 OUTPUT_ON = 255
 OUTPUT_OFF = 0
 ERROR_RETRY_INTERVAL = 1.0
