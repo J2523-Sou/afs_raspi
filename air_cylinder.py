@@ -14,17 +14,16 @@ from lib.afs_uart import afs_send
 from lib import controller_state
 
 
-# メカナムが ttyAMA0、雑巾装填機構が ttyAMA1 を使うため、
-# エアシリンダーは別ポートの ttyAMA2 を既定値にする。
-UART_DEVICE = os.environ.get("AIR_CYLINDER_UART_DEVICE", "/dev/ttyAMA2")
+# 基板のUART端子へ接続している、追加前と同じ ttyAMA0 を既定値にする。
+# 配線先を変えた場合は環境変数 AIR_CYLINDER_UART_DEVICE で変更できる。
+UART_DEVICE = os.environ.get("AIR_CYLINDER_UART_DEVICE", "/dev/ttyAMA0")
 
 # controller_state の0番目のバイトに入る L / R ボタンを使用する。
 BUTTON_BYTE_INDEX = int(os.environ.get("AIR_CYLINDER_BUTTON_BYTE_INDEX", "0"))
 BUTTON_MASK_L = int(os.environ.get("AIR_CYLINDER_BUTTON_MASK_L", "16"), 0)
 BUTTON_MASK_R = int(os.environ.get("AIR_CYLINDER_BUTTON_MASK_R", "32"), 0)
 
-SOLENOID_1_INDEX = 0
-SOLENOID_2_INDEX = 1
+SOLENOID_OUTPUT_INDEX = 0
 OUTPUT_ON = 255
 OUTPUT_OFF = 0
 ERROR_RETRY_INTERVAL = 1.0
@@ -41,15 +40,12 @@ def _get_pressed_buttons() -> Optional[int]:
 
 
 def _build_payload(is_extended: bool) -> List[int]:
-    """8バイトのAFSペイロードを作り、SOL1とSOL2を同時にONにしない。"""
+    """基板の相補回路を駆動する8バイトのAFSペイロードを作る。"""
     payload = [3] * 8
 
-    if is_extended:
-        payload[SOLENOID_1_INDEX] = OUTPUT_ON
-        payload[SOLENOID_2_INDEX] = OUTPUT_OFF
-    else:
-        payload[SOLENOID_1_INDEX] = OUTPUT_OFF
-        payload[SOLENOID_2_INDEX] = OUTPUT_ON
+    # PICから出るSOL1だけを切り替える。SOL2は基板上の相補回路により、
+    # SOL1がHIGHならLOW、SOL1がLOWならHIGHになる。
+    payload[SOLENOID_OUTPUT_INDEX] = OUTPUT_ON if is_extended else OUTPUT_OFF
 
     return payload
 
@@ -64,7 +60,7 @@ def run_air_cylinder(poll_interval: float = 0.02):
     is_extended = False
     last_buttons = 0
     input_available = False
-    last_sent = None
+    last_logged_payload = None
 
     try:
         while True:
@@ -93,15 +89,17 @@ def run_air_cylinder(poll_interval: float = 0.02):
                 last_buttons = pressed_buttons
 
             payload = _build_payload(is_extended)
-            if payload != last_sent:
-                try:
-                    afs_send(UART_DEVICE, payload)
-                    last_sent = list(payload)
+            try:
+                # 受信基板がいつ起動しても現在状態を受け取れるよう、
+                # zoukin_souten.py と同じく毎ループUART送信する。
+                afs_send(UART_DEVICE, payload)
+                if payload != last_logged_payload:
                     print("[UART SEND] payload:", payload)
-                except Exception as exc:
-                    print("[UART SEND] failed ->", UART_DEVICE, repr(exc))
-                    time.sleep(ERROR_RETRY_INTERVAL)
-                    continue
+                    last_logged_payload = list(payload)
+            except Exception as exc:
+                print("[UART SEND] failed ->", UART_DEVICE, repr(exc))
+                time.sleep(ERROR_RETRY_INTERVAL)
+                continue
 
             time.sleep(poll_interval)
     except KeyboardInterrupt:
