@@ -14,14 +14,15 @@ from lib.afs_uart import afs_send
 from lib import controller_state
 
 
-# 基板のUART端子へ接続している、追加前と同じ ttyAMA0 を既定値にする。
+# ソレノイド基板はGPIO4(TX) / GPIO5(RX)に割り当てたttyAMA2を使用する。
 # 配線先を変えた場合は環境変数 AIR_CYLINDER_UART_DEVICE で変更できる。
-UART_DEVICE = os.environ.get("AIR_CYLINDER_UART_DEVICE", "/dev/ttyAMA0")
+UART_DEVICE = os.environ.get("AIR_CYLINDER_UART_DEVICE", "/dev/ttyAMA2")
 
-# controller_state の0番目のバイトに入る L / R ボタンを使用する。
-BUTTON_BYTE_INDEX = int(os.environ.get("AIR_CYLINDER_BUTTON_BYTE_INDEX", "0"))
-BUTTON_MASK_L = int(os.environ.get("AIR_CYLINDER_BUTTON_MASK_L", "16"), 0)
-BUTTON_MASK_R = int(os.environ.get("AIR_CYLINDER_BUTTON_MASK_R", "32"), 0)
+# 送信側ではL1/R1をdata2へ格納しているため、受信配列の1番目を使用する。
+# data2: L1=bit1 (0x02), R1=bit2 (0x04)
+BUTTON_BYTE_INDEX = int(os.environ.get("AIR_CYLINDER_BUTTON_BYTE_INDEX", "1"))
+BUTTON_MASK_L = int(os.environ.get("AIR_CYLINDER_BUTTON_MASK_L", "2"), 0)
+BUTTON_MASK_R = int(os.environ.get("AIR_CYLINDER_BUTTON_MASK_R", "4"), 0)
 
 SOLENOID_OUTPUT_INDEX = 0
 OUTPUT_ON = 255
@@ -61,9 +62,17 @@ def run_air_cylinder(poll_interval: float = 0.02):
     last_buttons = 0
     input_available = False
     last_logged_payload = None
+    last_logged_button_bytes = None
 
     try:
         while True:
+            values = controller_state.get_values()
+            if values:
+                button_bytes = list(values[:3])
+                if button_bytes != last_logged_button_bytes:
+                    print("[CONTROLLER] button bytes[0:3]:", button_bytes)
+                    last_logged_button_bytes = button_bytes
+
             pressed_buttons = _get_pressed_buttons()
 
             if pressed_buttons is None:
