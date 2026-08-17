@@ -1,11 +1,5 @@
-"""Mecanum helper module
-
-提供する関数:
-- `axis_from_byte(b, invert_y=False)` : バイト -> -1..1
-- `compute_wheel_speeds(lx, ly, rx)` : メカナムの4輪速度 (-1..1)
-- `speeds_to_pwm_payload(fl, fr, rl, rr, dead=0.12, max_speed=1.0)` : 4輪速度 -> 8バイト PWM ペイロード
-- `run_mecanum(poll_interval=0.02, max_speed=1.0)` : `controller_state` をポーリングして UART 送信
-"""
+# メカナム
+# UART0
 
 from typing import List, Tuple
 import time

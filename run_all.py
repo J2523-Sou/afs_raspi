@@ -1,3 +1,5 @@
+# 一括実行
+
 import threading
 import time
 

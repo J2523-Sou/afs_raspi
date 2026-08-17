@@ -1,8 +1,5 @@
-"""Air cylinder controller.
-
-L / R ボタンのどちらかが押された瞬間にシリンダーの状態を切り替え、
-SOL1 / SOL2 を相互排他的に駆動する。
-"""
+# エアシリンダー
+# UART2
 
 from __future__ import annotations
 

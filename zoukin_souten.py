@@ -1,3 +1,5 @@
+# 雑巾装填
+
 """Zoukin Souten controller side.
 
 Poll controller_state, build an 8-byte UART payload, and send it with afs_send.

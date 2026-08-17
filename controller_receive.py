@@ -1,3 +1,5 @@
+# コントローラー受信
+
 import socket
 try:
     import lgpio
