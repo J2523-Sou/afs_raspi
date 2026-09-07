@@ -89,7 +89,7 @@ def run_mecanum(poll_interval: float = 0.02, max_speed: float = 1.0):
 
     try:
         while True:
-            vals = controller_state.get_values()
+            vals = [] if controller_state.is_emergency_stopped() else controller_state.get_values()
             if vals:
                 # 1. コントローラーからの目標値（Target）を取得
                 if len(vals) >= 7:

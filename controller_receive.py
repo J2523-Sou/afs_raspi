@@ -21,6 +21,7 @@ if lgpio is not None:
 
 HOST = "0.0.0.0"
 PORT = 5001
+OPTION_MASK = 0x10  # vals[0] bit4
 
 
 def _set_led(value):
@@ -42,6 +43,7 @@ def _recv_exact(conn, size):
 
 
 def run_receiver():
+    last_option_pressed = False
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
         server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         server.bind((HOST, PORT))
@@ -66,12 +68,18 @@ def run_receiver():
                         receive = _recv_exact(conn, 7)
                         if receive is None:
                             break
+                        option_pressed = bool(receive[0] & OPTION_MASK)
+                        if option_pressed and not last_option_pressed:
+                            locked = controller_state.toggle_emergency_stop()
+                            print("Emergency stop lock:", "ON" if locked else "OFF")
+                        last_option_pressed = option_pressed
                         controller_state.set_values(receive)
             except OSError as e:
                 print("Controller connection error:", e)
             finally:
                 # 切断直後から古い操作値を使わせない。
                 controller_state.clear_values()
+                last_option_pressed = False
                 _set_led(0)
                 print("Controller disconnected")
 
