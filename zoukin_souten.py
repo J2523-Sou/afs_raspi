@@ -6,10 +6,10 @@
 Poll controller_state, build an 8-byte UART payload, and send it with afs_send.
 
 Payload layout:
-1. Sitechiron 01 PWM
-2. Sitechiron 01 DIR
-3. Sitechiron 02 PWM
-4. Sitechiron 02 DIR
+1. Sitechiron 01 forward PWM
+2. Sitechiron 01 reverse PWM
+3. Sitechiron 02 forward PWM
+4. Sitechiron 02 reverse PWM
 5. Servo power placeholder
 6. Servo A/B position
 7. Reserved
@@ -53,10 +53,11 @@ def _circle_pressed(vals: List[int]) -> bool:
 
 
 def _motor_from_buttons(forward: bool, reverse: bool) -> Tuple[int, int]:
+    """メカナムドライバと同じ正転PWM・逆転PWMのペアを返す。"""
     if forward:
-        return 255, 255
-    if reverse:
         return 255, 0
+    if reverse:
+        return 0, 255
     return 0, 0
 
 
