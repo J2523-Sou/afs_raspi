@@ -11,6 +11,13 @@ DEFAULT_TIMEOUT = 0.1
 _connections = {}
 _connections_lock = Lock()
 _device_locks = {}
+_last_payloads = {}
+
+
+def get_last_payloads():
+    """Return the latest successfully requested payload for each UART device."""
+    with _connections_lock:
+        return {device: list(payload) for device, payload in _last_payloads.items()}
 
 def afs_init(ip, port):
 
@@ -90,6 +97,8 @@ def afs_send(uartNo, data):
 def afs_uart(uartNo, data):
     device = _resolve_uart_device(uartNo)
     payload = _normalize_payload(data)
+    with _connections_lock:
+        _last_payloads[device] = list(payload)
     frame = bytes([0xAA, *payload])
     serial = _load_serial_module()
 

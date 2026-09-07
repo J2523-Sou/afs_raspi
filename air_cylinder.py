@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import os
 import time
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from lib.afs_uart import afs_send
 from lib import controller_state
@@ -15,38 +15,51 @@ from lib import controller_state
 # 配線先を変えた場合は環境変数 AIR_CYLINDER_UART_DEVICE で変更できる。
 UART_DEVICE = os.environ.get("AIR_CYLINDER_UART_DEVICE", "/dev/ttyAMA2")
 
-# 送信側ではL1/R1をdata2へ格納しているため、受信配列の1番目を使用する。
-# data2: L1=bit1 (0x02), R1=bit2 (0x04)
+# 7バイト受信形式のdata2: L1=bit1 (0x02), R1=bit2 (0x04)
 BUTTON_BYTE_INDEX = int(os.environ.get("AIR_CYLINDER_BUTTON_BYTE_INDEX", "1"))
-BUTTON_MASK_L = int(os.environ.get("AIR_CYLINDER_BUTTON_MASK_L", "2"), 0)
-BUTTON_MASK_R = int(os.environ.get("AIR_CYLINDER_BUTTON_MASK_R", "4"), 0)
+BUTTON_MASK_L1 = int(os.environ.get("AIR_CYLINDER_BUTTON_MASK_L1", "2"), 0)
+BUTTON_MASK_R1 = int(os.environ.get("AIR_CYLINDER_BUTTON_MASK_R1", "4"), 0)
 
-# PIC側ではRB4(SOL1)がPWM2 Slice1 Output2に割り当てられており、
-# rx_buffer[4]、すなわちPythonペイロードの4番目(index 3)で駆動される。
-SOLENOID_OUTPUT_INDEX = 3
+# PIC出力は2本のシリンダーごとに2チャンネルを使う。
+# 各ペアは必ず片方だけONにする。
+CYLINDER_1_A_OUTPUT_INDEX = 2
+CYLINDER_1_B_OUTPUT_INDEX = 3
+CYLINDER_2_A_OUTPUT_INDEX = 4
+CYLINDER_2_B_OUTPUT_INDEX = 5
 OUTPUT_ON = 255
 OUTPUT_OFF = 0
 ERROR_RETRY_INTERVAL = 1.0
 
 
-def _get_pressed_buttons() -> Optional[int]:
-    """現在押されている L / R のビットを返す。入力なしの場合は None。"""
-    values = controller_state.get_values()
+def _get_cylinder_states(values=None) -> Optional[Tuple[bool, bool]]:
+    """(R1, L1)の押下状態を返す。"""
+    if values is None:
+        values = controller_state.get_values()
     if not values or len(values) <= BUTTON_BYTE_INDEX:
         return None
 
     button_byte = int(values[BUTTON_BYTE_INDEX])
-    return button_byte & (BUTTON_MASK_L | BUTTON_MASK_R)
+    return bool(button_byte & BUTTON_MASK_R1), bool(button_byte & BUTTON_MASK_L1)
 
 
-def _build_payload(is_extended: bool) -> List[int]:
-    """基板の相補回路を駆動する8バイトのAFSペイロードを作る。"""
-    payload = [3] * 8
-
-    # PICから出るSOL1だけを切り替える。SOL2は基板上の相補回路により、
-    # SOL1がHIGHならLOW、SOL1がLOWならHIGHになる。
-    payload[SOLENOID_OUTPUT_INDEX] = OUTPUT_ON if is_extended else OUTPUT_OFF
-
+def _build_payload(
+    cylinder1_b_selected: bool,
+    cylinder2_b_selected: bool,
+) -> List[int]:
+    """2組の相補出力を持つ8バイトペイロードを作る。"""
+    payload = [0] * 8
+    payload[CYLINDER_1_A_OUTPUT_INDEX] = (
+        OUTPUT_OFF if cylinder1_b_selected else OUTPUT_ON
+    )
+    payload[CYLINDER_1_B_OUTPUT_INDEX] = (
+        OUTPUT_ON if cylinder1_b_selected else OUTPUT_OFF
+    )
+    payload[CYLINDER_2_A_OUTPUT_INDEX] = (
+        OUTPUT_OFF if cylinder2_b_selected else OUTPUT_ON
+    )
+    payload[CYLINDER_2_B_OUTPUT_INDEX] = (
+        OUTPUT_ON if cylinder2_b_selected else OUTPUT_OFF
+    )
     return payload
 
 
@@ -54,14 +67,15 @@ def run_air_cylinder(poll_interval: float = 0.02):
     print("[UART INIT] Air cylinder uses", UART_DEVICE)
     print(
         "[BUTTON] byte_index=%d L=0x%02X R=0x%02X"
-        % (BUTTON_BYTE_INDEX, BUTTON_MASK_L, BUTTON_MASK_R)
+        % (BUTTON_BYTE_INDEX, BUTTON_MASK_L1, BUTTON_MASK_R1)
     )
 
-    is_extended = False
-    last_buttons = 0
-    input_available = False
     last_logged_payload = None
     last_logged_button_bytes = None
+    cylinder1_b_selected = False
+    cylinder2_b_selected = False
+    last_r1_pressed = False
+    last_l1_pressed = False
 
     try:
         while True:
@@ -72,31 +86,30 @@ def run_air_cylinder(poll_interval: float = 0.02):
                     print("[CONTROLLER] button bytes[0:3]:", button_bytes)
                     last_logged_button_bytes = button_bytes
 
-            pressed_buttons = _get_pressed_buttons()
+            states = _get_cylinder_states(values)
+            r1_pressed, l1_pressed = states if states is not None else (False, False)
 
-            if pressed_buttons is None:
-                # コントローラー切断時は安全側（SOL2）へ戻す。
-                if is_extended:
-                    print("[FAILSAFE] controller input unavailable -> RETRACTED")
-                    is_extended = False
-                last_buttons = 0
-                input_available = False
-            elif not input_available:
-                # 再接続時にボタンが押されたままでも誤作動させない。
-                # 一度ボタンを離してからの新しい押下のみ受け付ける。
-                last_buttons = pressed_buttons
-                input_available = True
-            else:
-                newly_pressed = pressed_buttons & ~last_buttons
-                if newly_pressed:
-                    is_extended = not is_extended
-                    print(
-                        "[BUTTON] L/R pressed ->",
-                        "EXTENDED" if is_extended else "RETRACTED",
-                    )
-                last_buttons = pressed_buttons
+            # 押した瞬間に、対応するペア内の有効チャンネルを切り替える。
+            # 長押し中は現在の組み合わせを維持する。
+            if r1_pressed and not last_r1_pressed:
+                cylinder1_b_selected = not cylinder1_b_selected
+                print(
+                    "[R1] cylinder1 ->",
+                    "CH2" if cylinder1_b_selected else "CH1",
+                )
+            if l1_pressed and not last_l1_pressed:
+                cylinder2_b_selected = not cylinder2_b_selected
+                print(
+                    "[L1] cylinder2 ->",
+                    "CH4" if cylinder2_b_selected else "CH3",
+                )
+            last_r1_pressed = r1_pressed
+            last_l1_pressed = l1_pressed
 
-            payload = _build_payload(is_extended)
+            payload = _build_payload(
+                cylinder1_b_selected,
+                cylinder2_b_selected,
+            )
             try:
                 # 受信基板がいつ起動しても現在状態を受け取れるよう、
                 # zoukin_souten.py と同じく毎ループUART送信する。
