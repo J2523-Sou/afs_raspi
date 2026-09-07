@@ -24,15 +24,40 @@ from typing import List, Tuple
 
 from lib.afs_uart import afs_send
 from lib import controller_state
+import RPi.GPIO as GPIO
+
+
 
 
 UART_DEVICE = os.environ.get("ZOUKIN_SOUTEN_UART_DEVICE", "/dev/ttyAMA1")
 
-# サーボ用の定数
-# A地点/B地点の位置を変えたいときはここだけ直す
-SERVO_POWER_PWM = 255
-SERVO_A_ANGLE = 5
-SERVO_B_ANGLE = 100
+
+# ===== サーボ設定：ここだけ変更すれば調整できます =====
+# BCM番号（物理ピン番号ではありません）
+SERVO1_PIN = 18
+SERVO2_PIN = 19
+
+# 開く・閉じる位置の角度（-90〜+90）
+# サーボごとに回転方向が異なる場合は、それぞれの角度を逆に設定してください。
+SERVO1_OPEN_ANGLE = 30
+SERVO1_CLOSED_ANGLE = 0
+SERVO2_OPEN_ANGLE = 30
+SERVO2_CLOSED_ANGLE = 0
+
+# プログラムを起動した時点の実際の状態に合わせます。
+# Falseなら、最初の丸ボタンで「開く」動作になります。
+START_OPEN = False
+
+# SG90のPWM設定。通常は変更不要です。
+ANGLE_RANGE = 180
+TIME_RANGE = 1.9
+MIN_TIME = 0.5
+CYCLE_TIME = 20.0
+CIRCLE_BUTTON_BYTE_INDEX = 0
+CIRCLE_BUTTON_MASK = 0b00000010
+
+
+
 
 
 def _u8(value: int) -> int:
@@ -50,8 +75,12 @@ def _button_pressed(value: int, mask: int) -> bool:
     return (int(value) & mask) != 0
 
 
-def _circle_pressed(vals: List[int]) -> bool:
-    return _button_pressed(vals[0] if len(vals) > 0 else 0, 0b00000010)
+def _circle_pressed(values: List[int]) -> bool:
+    if len(values) <= CIRCLE_BUTTON_BYTE_INDEX:
+        return False
+    return _button_pressed(
+        values[CIRCLE_BUTTON_BYTE_INDEX], CIRCLE_BUTTON_MASK
+    )
 
 
 def _motor_from_buttons(forward: bool, reverse: bool) -> Tuple[int, int]:
@@ -63,7 +92,7 @@ def _motor_from_buttons(forward: bool, reverse: bool) -> Tuple[int, int]:
     return 0, 0
 
 
-def _build_payload_from_controller(vals: List[int], servo_at_a: bool) -> List[int]:
+def _build_payload_from_controller(vals: List[int]) -> List[int]:
     payload = [1] * 8
 
     button_bytes = vals[1] if len(vals) > 1 else 0
@@ -80,30 +109,74 @@ def _build_payload_from_controller(vals: List[int], servo_at_a: bool) -> List[in
     payload[2] = _u8(m2_pwm)
     payload[3] = _u8(m2_dir)
 
-    payload[4] = SERVO_POWER_PWM
-    payload[5] = SERVO_A_ANGLE if servo_at_a else SERVO_B_ANGLE
+    # UART経由のサーボ制御は使わない
+    payload[4] = 0
+    payload[5] = 0
 
     return payload
 
 
+def move_servo(pwm, angle: float) -> bool:
+    """Move the servo to an angle from -90 to +90 degrees."""
+    if angle < -90 or angle > 90:
+        return False
+
+    percent = (angle + 90) / ANGLE_RANGE
+    pulse_time = MIN_TIME + (TIME_RANGE * percent)
+    duty_cycle = (pulse_time / CYCLE_TIME) * 100
+    pwm.ChangeDutyCycle(duty_cycle)
+    return True
+
+
+def set_servo_open_state(pwm1, pwm2, is_open: bool) -> None:
+    """Set both servos to their configured open or closed position."""
+    if is_open:
+        servo1_angle = SERVO1_OPEN_ANGLE
+        servo2_angle = SERVO2_OPEN_ANGLE
+        state_name = "OPEN"
+    else:
+        servo1_angle = SERVO1_CLOSED_ANGLE
+        servo2_angle = SERVO2_CLOSED_ANGLE
+        state_name = "CLOSED"
+
+    if not move_servo(pwm1, servo1_angle):
+        raise ValueError("SERVO1 angle must be between -90 and +90")
+    if not move_servo(pwm2, servo2_angle):
+        raise ValueError("SERVO2 angle must be between -90 and +90")
+
+    print(
+        "[SERVO]",
+        state_name,
+        "servo1=", servo1_angle,
+        "servo2=", servo2_angle,
+    )
+
+
 def run_zoukin_souten(poll_interval: float = 0.02):
-    servo_at_a = True
-    last_circle = False
     last_sent = None
+    last_circle_pressed = False
+    servo_is_open = START_OPEN
 
     print("[UART INIT] Zoukin Souten uses", UART_DEVICE)
+    GPIO.setmode(GPIO.BCM)
+    GPIO.setup(SERVO1_PIN, GPIO.OUT)
+    GPIO.setup(SERVO2_PIN, GPIO.OUT)
+    pwm1 = GPIO.PWM(SERVO1_PIN, 50)
+    pwm2 = GPIO.PWM(SERVO2_PIN, 50)
+    pwm1.start(0)
+    pwm2.start(0)
 
     try:
         while True:
             vals = _get_values()
 
-            circle_now = _circle_pressed(vals)
-            if circle_now and not last_circle:
-                servo_at_a = not servo_at_a
-                print("[SERVO] toggle:", "A地点" if servo_at_a else "B地点")
-            last_circle = circle_now
+            circle_pressed = _circle_pressed(vals)
+            if circle_pressed and not last_circle_pressed:
+                servo_is_open = not servo_is_open
+                set_servo_open_state(pwm1, pwm2, servo_is_open)
+            last_circle_pressed = circle_pressed
 
-            payload = _build_payload_from_controller(vals, servo_at_a)
+            payload = _build_payload_from_controller(vals)
 
             if payload != last_sent:
                 print("[UART SEND] payload:", payload)
@@ -118,6 +191,11 @@ def run_zoukin_souten(poll_interval: float = 0.02):
             time.sleep(poll_interval)
     except KeyboardInterrupt:
         pass
+    finally:
+        pwm1.stop()
+        pwm2.stop()
+        GPIO.cleanup(SERVO1_PIN)
+        GPIO.cleanup(SERVO2_PIN)
 
 
 run_receiver = run_zoukin_souten
