@@ -40,6 +40,8 @@ def _u8(value: int) -> int:
 
 
 def _get_values() -> List[int]:
+    if controller_state.is_emergency_stopped():
+        return []
     vals = controller_state.get_values()
     return list(vals) if vals else []
 
