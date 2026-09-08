@@ -56,6 +56,11 @@ CYCLE_TIME = 20.0
 CIRCLE_BUTTON_BYTE_INDEX = 0
 CIRCLE_BUTTON_MASK = 0b00000010
 
+LIMIT1_PIN = NULL //右側のリミットスイッチ
+LIMIT2_PIN = NULL //左側のリミットスイッチ
+LIMIT3_PIN = NULL //サーボの先のリミットスイッチ
+LIMIT4_PIN = NULL //昇降モーターが下がりきった時のリミットスイッチ
+
 
 
 
@@ -81,6 +86,31 @@ def _circle_pressed(values: List[int]) -> bool:
     return _button_pressed(
         values[CIRCLE_BUTTON_BYTE_INDEX], CIRCLE_BUTTON_MASK
     )
+
+def move_until_limit(payload, limit_pin, poll_interval):
+    stop = [0, 0, 0, 0, 0, 0, 1, 1]
+
+    try:
+        while GPIO.input(limit_pin) == GPIO.HIGH:
+            # 非常停止・コントローラー切断なら中止
+            if controller_state.is_emergency_stopped() or not controller_state.get_values():
+                return False
+
+            afs_send(UART_DEVICE, payload)
+            time.sleep(poll_interval)
+
+        # ここに来たらリミットスイッチが押された
+        return True
+
+    finally:
+        afs_send(UART_DEVICE, stop)  # 必ずモーター停止
+
+
+def _triangle_pressed(values: List[int]) -> bool:
+    """△ボタン（vals[0] のbit3）が押されているかを返す。"""
+    if not values:
+        return False
+    return _button_pressed(values[0], 0b00001000)
 
 
 def _motor_from_buttons(forward: bool, reverse: bool) -> Tuple[int, int]:
@@ -152,10 +182,95 @@ def set_servo_open_state(pwm1, pwm2, is_open: bool) -> None:
     )
 
 
+def _send_payload_for(payload: List[int], seconds: float, poll_interval: float) -> bool:
+    """指定したモーター指令を、指定秒数だけ送り続ける。"""
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        # 非常停止またはコントローラー切断なら、試運転を中止する。
+        if controller_state.is_emergency_stopped() or not controller_state.get_values():
+            return False
+        try:
+            afs_send(UART_DEVICE, payload)
+        except Exception as e:
+            print("[AUTO TEST] UART send failed ->", UART_DEVICE, repr(e))
+            return False
+        time.sleep(poll_interval)
+    return True
+
+
+def run_auto_test(pwm1, pwm2, poll_interval: float) -> None:
+    """実際の動き
+    モーター1:持ち上げるやつ
+    モーター2:横に動くやつ
+    サーボ1:右側のサーボ
+    サーボ2:左側のサーボ
+    """
+    stop = [0, 0, 0, 0, 0, 0, 1, 1]
+
+    try:
+        # サーボを開く。モーターは止めたまま0.40秒待つ。
+        move_servo(pwm1, SERVO1_OPEN_ANGLE)
+        move_servo(pwm2, SERVO2_OPEN_ANGLE)
+        if not _send_payload_for(stop, 0.40, poll_interval):
+            return
+        if GPIO.input(LIMIT1_PIN) == GPIO.HIGH: //もし右側のリミットスイッチにモーターが触れていたなら
+
+            //雑巾保管場所を上げる            
+            if not move_until_limit([0, 0, 80, 0, 0, 0, 1, 1], LIMIT3_PIN, poll_interval):
+                return
+            //サーボを閉じる
+            move_servo(pwm2, SERVO2_CLOSED_ANGLE)
+            if not _send_payload_for(stop, 0.40, poll_interval):
+                return
+            //雑巾保管場所を下げる
+            if not move_until_limit([0, 0, 0, 80, 0, 0, 1, 1], LIMIT4_PIN, poll_interval):
+                return
+            //装填機構を横にスライド
+            if not move_until_limit([80, 0, 0, 0, 0, 0, 1, 1], LIMIT2_PIN, poll_interval):
+                return
+            //サーボを開く
+            move_servo(pwm2, SERVO2_OPEN_ANGLE)
+            if not _send_payload_for(stop, 0.40, poll_interval):
+                return
+        elif GPIO.input(LIMIT2_PIN) == GPIO.HIGH: //もし左側のリミットスイッチにモーターが触れていたなら
+            //雑巾保管場所を上げる            
+            if not move_until_limit([0, 0, 80, 0, 0, 0, 1, 1], LIMIT3_PIN, poll_interval):
+                return
+            //サーボを閉じる
+            move_servo(pwm1, SERVO1_CLOSED_ANGLE)
+            if not _send_payload_for(stop, 0.40, poll_interval):
+                return
+            //雑巾保管場所を下げる
+            if not move_until_limit([0, 0, 0, 80, 0, 0, 1, 1], LIMIT4_PIN, poll_interval):
+                return
+            //装填機構を横にスライド
+            if not move_until_limit([0, 80, 0, 0, 0, 0, 1, 1], LIMIT2_PIN, poll_interval):
+                return
+            //サーボを開く
+            move_servo(pwm1, SERVO1_OPEN_ANGLE)
+            if not _send_payload_for(stop, 0.40, poll_interval):
+                return
+
+        else:
+            print("どっちのリミットスイッチにも触れていません。雑巾装填機構がどちら側にあるか確認してください。")
+            return
+        # サーボを閉じる。モーターは止めたまま0.40秒待つ。
+        move_servo(pwm1, SERVO1_CLOSED_ANGLE)
+        move_servo(pwm2, SERVO2_CLOSED_ANGLE)
+        _send_payload_for(stop, 0.40, poll_interval)
+    finally:
+        # 終了・非常停止・UARTエラー時のいずれでもモーターを止める。
+        try:
+            afs_send(UART_DEVICE, stop)
+        except Exception as e:
+            print("[AUTO TEST] final stop failed ->", UART_DEVICE, repr(e))
+
+
 def run_zoukin_souten(poll_interval: float = 0.02):
     last_sent = None
     last_circle_pressed = False
     servo_is_open = START_OPEN
+    last_triangle_pressed = False
 
     print("[UART INIT] Zoukin Souten uses", UART_DEVICE)
     GPIO.setmode(GPIO.BCM)
@@ -171,12 +286,24 @@ def run_zoukin_souten(poll_interval: float = 0.02):
             vals = _get_values()
 
             circle_pressed = _circle_pressed(vals)
-            if circle_pressed and not last_circle_pressed:
-                servo_is_open = not servo_is_open
-                set_servo_open_state(pwm1, pwm2, servo_is_open)
-            last_circle_pressed = circle_pressed
+            triangle_pressed = _triangle_pressed(vals)
 
-            payload = _build_payload_from_controller(vals)
+            # △を押した瞬間だけ、上の run_auto_test() を1回実行する。
+            if triangle_pressed and not last_triangle_pressed:
+                print("[AUTO TEST] start")
+                run_auto_test(pwm1, pwm2, poll_interval)
+                payload = [0, 0, 0, 0, 0, 0, 1, 1]
+                last_circle_pressed = circle_pressed
+            else:
+                # 通常時は従来どおり、○でサーボ、十字キーでモーターを操作する。
+                if circle_pressed and not last_circle_pressed:
+                    servo_is_open = not servo_is_open
+                    move_servo(pwm1, SERVO1_OPEN_ANGLE if servo_is_open else SERVO1_CLOSED_ANGLE)
+                    move_servo(pwm2, SERVO2_OPEN_ANGLE if servo_is_open else SERVO2_CLOSED_ANGLE)
+                last_circle_pressed = circle_pressed
+                payload = _build_payload_from_controller(vals)
+
+            last_triangle_pressed = triangle_pressed
 
             if payload != last_sent:
                 print("[UART SEND] payload:", payload)
