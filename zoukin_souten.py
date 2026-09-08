@@ -6,10 +6,10 @@
 Poll controller_state, build an 8-byte UART payload, and send it with afs_send.
 
 Payload layout:
-1. Sitechiron 01 forward PWM
-2. Sitechiron 01 reverse PWM
-3. Sitechiron 02 forward PWM
-4. Sitechiron 02 reverse PWM
+1. slido_moter 01 forward PWM
+2. slido_moter 01 reverse PWM
+3. up_moter 02 forward PWM
+4. up_moter 02 reverse PWM
 5. Servo power placeholder
 6. Servo A/B position
 7. Reserved
@@ -56,10 +56,10 @@ CYCLE_TIME = 20.0
 CIRCLE_BUTTON_BYTE_INDEX = 0
 CIRCLE_BUTTON_MASK = 0b00000010
 
-LIMIT1_PIN = NULL //右側のリミットスイッチ
-LIMIT2_PIN = NULL //左側のリミットスイッチ
-LIMIT3_PIN = NULL //サーボの先のリミットスイッチ
-LIMIT4_PIN = NULL //昇降モーターが下がりきった時のリミットスイッチ
+LIMIT1_PIN = NULL  # 右側のリミットスイッチ
+LIMIT2_PIN = NULL  # 左側のリミットスイッチ
+LIMIT3_PIN = NULL  # サーボの先のリミットスイッチ
+LIMIT4_PIN = NULL  # 昇降モーターが下がりきった時のリミットスイッチ
 
 
 
@@ -200,10 +200,10 @@ def _send_payload_for(payload: List[int], seconds: float, poll_interval: float) 
 
 def run_auto_test(pwm1, pwm2, poll_interval: float) -> None:
     """実際の動き
-    モーター1:持ち上げるやつ
-    モーター2:横に動くやつ
-    サーボ1:右側のサーボ
-    サーボ2:左側のサーボ
+    up_moter1:持ち上げるやつ
+    slide_moter2:横に動くやつ
+    SERVO1:右側のサーボ
+    SERVO2:左側のサーボ
     """
     stop = [0, 0, 0, 0, 0, 0, 1, 1]
 
@@ -213,46 +213,46 @@ def run_auto_test(pwm1, pwm2, poll_interval: float) -> None:
         move_servo(pwm2, SERVO2_OPEN_ANGLE)
         if not _send_payload_for(stop, 0.40, poll_interval):
             return
-        if GPIO.input(LIMIT1_PIN) == GPIO.HIGH: //もし右側のリミットスイッチにモーターが触れていたなら
+        if GPIO.input(LIMIT1_PIN) == GPIO.HIGH:  # もし右側のリミットスイッチにモーターが触れていたなら
 
-            //雑巾保管場所を上げる            
+            # 雑巾保管場所を上げる
             if not move_until_limit([0, 0, 80, 0, 0, 0, 1, 1], LIMIT3_PIN, poll_interval):
                 return
-            //サーボを閉じる
+            # サーボを閉じる
             move_servo(pwm2, SERVO2_CLOSED_ANGLE)
             if not _send_payload_for(stop, 0.40, poll_interval):
                 return
-            //雑巾保管場所を下げる
+            # 雑巾保管場所を下げる
             if not move_until_limit([0, 0, 0, 80, 0, 0, 1, 1], LIMIT4_PIN, poll_interval):
                 return
-            //装填機構を横にスライド
+            # 装填機構を横にスライド
             if not move_until_limit([80, 0, 0, 0, 0, 0, 1, 1], LIMIT2_PIN, poll_interval):
                 return
-            //サーボを開く
+            # サーボを開く
             move_servo(pwm2, SERVO2_OPEN_ANGLE)
             if not _send_payload_for(stop, 0.40, poll_interval):
                 return
-        elif GPIO.input(LIMIT2_PIN) == GPIO.HIGH: //もし左側のリミットスイッチにモーターが触れていたなら
-            //雑巾保管場所を上げる            
+        elif GPIO.input(LIMIT2_PIN) == GPIO.HIGH:  # もし左側のリミットスイッチにモーターが触れていたなら
+            # 雑巾保管場所を上げる
             if not move_until_limit([0, 0, 80, 0, 0, 0, 1, 1], LIMIT3_PIN, poll_interval):
                 return
-            //サーボを閉じる
+            # サーボを閉じる
             move_servo(pwm1, SERVO1_CLOSED_ANGLE)
             if not _send_payload_for(stop, 0.40, poll_interval):
                 return
-            //雑巾保管場所を下げる
+            # 雑巾保管場所を下げる
             if not move_until_limit([0, 0, 0, 80, 0, 0, 1, 1], LIMIT4_PIN, poll_interval):
                 return
-            //装填機構を横にスライド
+            # 装填機構を横にスライド
             if not move_until_limit([0, 80, 0, 0, 0, 0, 1, 1], LIMIT2_PIN, poll_interval):
                 return
-            //サーボを開く
+            # サーボを開く
             move_servo(pwm1, SERVO1_OPEN_ANGLE)
             if not _send_payload_for(stop, 0.40, poll_interval):
                 return
 
         else:
-            print("どっちのリミットスイッチにも触れていません。雑巾装填機構がどちら側にあるか確認してください。")
+            print("どっちのリミットスイッチにも触れてなくてうぉ。雑巾装填機構がどちら側にあるか確認してください。")
             return
         # サーボを閉じる。モーターは止めたまま0.40秒待つ。
         move_servo(pwm1, SERVO1_CLOSED_ANGLE)
