@@ -106,13 +106,6 @@ def move_until_limit(payload, limit_pin, poll_interval):
         afs_send(UART_DEVICE, stop)  # 必ずモーター停止
 
 
-def _triangle_pressed(values: List[int]) -> bool:
-    """△ボタン（vals[0] のbit3）が押されているかを返す。"""
-    if not values:
-        return False
-    return _button_pressed(values[0], 0b00001000)
-
-
 def _motor_from_buttons(forward: bool, reverse: bool) -> Tuple[int, int]:
     """メカナムドライバと同じ正転PWM・逆転PWMのペアを返す。"""
     if forward:
@@ -269,8 +262,6 @@ def run_auto_test(pwm1, pwm2, poll_interval: float) -> None:
 def run_zoukin_souten(poll_interval: float = 0.02):
     last_sent = None
     last_circle_pressed = False
-    servo_is_open = START_OPEN
-    last_triangle_pressed = False
 
     print("[UART INIT] Zoukin Souten uses", UART_DEVICE)
     GPIO.setmode(GPIO.BCM)
@@ -286,24 +277,18 @@ def run_zoukin_souten(poll_interval: float = 0.02):
             vals = _get_values()
 
             circle_pressed = _circle_pressed(vals)
-            triangle_pressed = _triangle_pressed(vals)
 
-            # △を押した瞬間だけ、上の run_auto_test() を1回実行する。
-            if triangle_pressed and not last_triangle_pressed:
+            # ○を押した瞬間だけ、上の run_auto_test() を1回実行する。
+            # ○による通常のサーボ開閉トグルは使わない。
+            if circle_pressed and not last_circle_pressed:
                 print("[AUTO TEST] start")
                 run_auto_test(pwm1, pwm2, poll_interval)
                 payload = [0, 0, 0, 0, 0, 0, 1, 1]
-                last_circle_pressed = circle_pressed
             else:
-                # 通常時は従来どおり、○でサーボ、十字キーでモーターを操作する。
-                if circle_pressed and not last_circle_pressed:
-                    servo_is_open = not servo_is_open
-                    move_servo(pwm1, SERVO1_OPEN_ANGLE if servo_is_open else SERVO1_CLOSED_ANGLE)
-                    move_servo(pwm2, SERVO2_OPEN_ANGLE if servo_is_open else SERVO2_CLOSED_ANGLE)
-                last_circle_pressed = circle_pressed
+                # 通常時は十字キーでモーターを操作する。
                 payload = _build_payload_from_controller(vals)
 
-            last_triangle_pressed = triangle_pressed
+            last_circle_pressed = circle_pressed
 
             if payload != last_sent:
                 print("[UART SEND] payload:", payload)
