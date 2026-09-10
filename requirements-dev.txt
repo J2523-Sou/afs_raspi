@@ -1,0 +1,2 @@
+# Development and CI dependencies
+pytest==8.3.5

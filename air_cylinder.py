@@ -106,7 +106,7 @@ def run_air_cylinder(poll_interval: float = 0.02):
             last_r1_pressed = r1_pressed
             last_l1_pressed = l1_pressed
 
-            payload = _build_payload(
+            payload = [0] * 8 if controller_state.is_emergency_stopped() else _build_payload(
                 cylinder1_b_selected,
                 cylinder2_b_selected,
             )
