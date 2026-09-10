@@ -39,9 +39,9 @@ SERVO2_PIN = 19
 
 # 開く・閉じる位置の角度（-90〜+90）
 # サーボごとに回転方向が異なる場合は、それぞれの角度を逆に設定してください。
-SERVO1_OPEN_ANGLE = 30
+SERVO1_OPEN_ANGLE = 35
 SERVO1_CLOSED_ANGLE = 0
-SERVO2_OPEN_ANGLE = 30
+SERVO2_OPEN_ANGLE = 35
 SERVO2_CLOSED_ANGLE = 0
 
 # プログラムを起動した時点の実際の状態に合わせます。
@@ -200,3 +200,4 @@ run_receiver = run_zoukin_souten
 
 if __name__ == "__main__":
     run_zoukin_souten()
+
