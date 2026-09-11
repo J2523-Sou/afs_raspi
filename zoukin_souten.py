@@ -59,7 +59,8 @@ CIRCLE_BUTTON_MASK = 0b00000010
 LIMIT1_PIN = NULL  # 右側のリミットスイッチ
 LIMIT2_PIN = NULL  # 左側のリミットスイッチ
 LIMIT3_PIN = NULL  # サーボの先のリミットスイッチ
-LIMIT4_PIN = NULL  # 昇降モーターが下がりきった時のリミットスイッチ
+
+SOUTEN_KIKOU_ICHI = "NULL"  # 雑巾装填機構の位置を示す（右,左） まだプログラムに追加してないので後から絶対に追加する.
 
 
 
@@ -215,8 +216,8 @@ def run_auto_test(pwm1, pwm2, poll_interval: float) -> None:
             move_servo(pwm2, SERVO2_CLOSED_ANGLE)
             if not _send_payload_for(stop, 0.40, poll_interval):
                 return
-            # 雑巾保管場所を下げる
-            if not move_until_limit([0, 0, 0, 80, 0, 0, 1, 1], LIMIT4_PIN, poll_interval):
+            # 雑巾保管場所を下げる(下げる時間はまた後で設定)
+            if not _send_payload_for([0, 0, 0, 80, 0, 0, 1, 1], 0.40, poll_interval):
                 return
             # 装填機構を横にスライド
             if not move_until_limit([80, 0, 0, 0, 0, 0, 1, 1], LIMIT2_PIN, poll_interval):
@@ -233,11 +234,14 @@ def run_auto_test(pwm1, pwm2, poll_interval: float) -> None:
             move_servo(pwm1, SERVO1_CLOSED_ANGLE)
             if not _send_payload_for(stop, 0.40, poll_interval):
                 return
-            # 雑巾保管場所を下げる
-            if not move_until_limit([0, 0, 0, 80, 0, 0, 1, 1], LIMIT4_PIN, poll_interval):
+            # 雑巾保管場所を下げる(下げる時間はまた後で設定)
+            if not _send_payload_for([0, 0, 0, 80, 0, 0, 1, 1], 0.40, poll_interval):
                 return
             # 装填機構を横にスライド
             if not move_until_limit([0, 80, 0, 0, 0, 0, 1, 1], LIMIT2_PIN, poll_interval):
+                return
+            # 雑巾保管場所を上げる
+            if not move_until_limit([0, 0, 80, 0, 0, 0, 1, 1], LIMIT1_PIN, poll_interval):
                 return
             # サーボを開く
             move_servo(pwm1, SERVO1_OPEN_ANGLE)
