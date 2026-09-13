@@ -56,9 +56,9 @@ CYCLE_TIME = 20.0
 CIRCLE_BUTTON_BYTE_INDEX = 0
 CIRCLE_BUTTON_MASK = 0b00000010
 
-LIMIT1_PIN = NULL  # 右側のリミットスイッチ
-LIMIT2_PIN = NULL  # 左側のリミットスイッチ
-LIMIT3_PIN = NULL  # サーボの先のリミットスイッチ
+LIMIT1_PIN = 8  # 右側のリミットスイッチ
+LIMIT2_PIN = 12 # 左側のリミットスイッチ
+LIMIT3_PIN = 9  # サーボの先のリミットスイッチ
 
 SOUTEN_KIKOU_ICHI = "NULL"  # 雑巾装填機構の位置を示す（右,左） まだプログラムに追加してないので後から絶対に追加する.
 
@@ -208,9 +208,10 @@ def run_auto_test(pwm1, pwm2, poll_interval: float) -> None:
         if not _send_payload_for(stop, 0.40, poll_interval):
             return
         # 右側と左側のリミットスイッチがどちらもLOWなら、モーターを動かす。
-        if GPIO.input(LIMIT1_PIN) == GPIO.LOW: and GPIO.input(LIMIT2_PIN) == GPIO.LOW: 
-            if not move_until_limit([0, 80, 0, 0, 0, 0, 1, 1], LIMIT1_PIN, poll_interval):
-                return
+        if GPIO.input(LIMIT1_PIN) == GPIO.LOW and GPIO.input(LIMIT2_PIN) == GPIO.LOW:
+                if not move_until_limit([0, 80, 0, 0, 0, 0, 1, 1], LIMIT1_PIN, poll_interval):
+                    return
+        
         if GPIO.input(LIMIT1_PIN) == GPIO.HIGH:  # もし右側のリミットスイッチにモーターが触れていたなら
 
             # 雑巾保管場所を上げる
