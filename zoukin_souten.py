@@ -207,11 +207,16 @@ def run_auto_test(pwm1, pwm2, poll_interval: float) -> None:
         move_servo(pwm2, SERVO2_OPEN_ANGLE)
         if not _send_payload_for(stop, 0.40, poll_interval):
             return
+        # 右側と左側のリミットスイッチがどちらもLOWなら、モーターを動かす。
+        if GPIO.input(LIMIT1_PIN) == GPIO.LOW: and GPIO.input(LIMIT2_PIN) == GPIO.LOW: 
+            if not move_until_limit([0, 80, 0, 0, 0, 0, 1, 1], LIMIT1_PIN, poll_interval):
+                return
         if GPIO.input(LIMIT1_PIN) == GPIO.HIGH:  # もし右側のリミットスイッチにモーターが触れていたなら
 
             # 雑巾保管場所を上げる
             if not move_until_limit([0, 0, 80, 0, 0, 0, 1, 1], LIMIT3_PIN, poll_interval):
                 return
+            
             # サーボを閉じる
             move_servo(pwm2, SERVO2_CLOSED_ANGLE)
             if not _send_payload_for(stop, 0.40, poll_interval):
