@@ -39,9 +39,9 @@ SERVO1_PIN = 18
 SERVO2_PIN = 19
 
 # 開く・閉じる位置の角度（-90〜+90）
-# サーボごとに回転方向が異なる場合は、それぞれの角度を逆に設定してください。
-SERVO1_OPEN_ANGLE = -90
-SERVO1_CLOSED_ANGLE = 0
+# 2つのサーボで共通して使う角度を設定します。
+OPEN_ANGLE = -90
+CLOSED_ANGLE = 0
 
 # プログラムを起動した時点の実際の状態に合わせます。
 # Falseなら、最初の丸ボタンで「開く」動作になります。
@@ -199,12 +199,12 @@ def move_servo(pwm, angle: float) -> bool:
 def set_servo_open_state(pwm1, pwm2, is_open: bool) -> None:
     """Set both servos to their configured open or closed position."""
     if is_open:
-        servo1_angle = SERVO1_OPEN_ANGLE
-        servo2_angle = SERVO1_OPEN_ANGLE
+        servo1_angle = OPEN_ANGLE
+        servo2_angle = OPEN_ANGLE
         state_name = "OPEN"
     else:
-        servo1_angle = SERVO1_CLOSED_ANGLE
-        servo2_angle = SERVO1_CLOSED_ANGLE
+        servo1_angle = CLOSED_ANGLE
+        servo2_angle = CLOSED_ANGLE
         state_name = "CLOSED"
 
     if not move_servo(pwm1, servo1_angle):
@@ -250,8 +250,8 @@ def run_auto_test(pwm1, pwm2, poll_interval: float, retry_count: int = 0) -> Non
 
     try:
         # サーボを開く。モーターは止めたまま0.40秒待つ。
-        move_servo(pwm1, SERVO1_OPEN_ANGLE)
-        move_servo(pwm2, SERVO1_OPEN_ANGLE)
+        move_servo(pwm1, OPEN_ANGLE)
+        move_servo(pwm2, OPEN_ANGLE)
         if not _send_payload_for(stop, 0.40, poll_interval):
             return
         # 両方HIGHなら右側リミットをいったん離して再接触させ、最初からやり直す。
@@ -268,8 +268,8 @@ def run_auto_test(pwm1, pwm2, poll_interval: float, retry_count: int = 0) -> Non
                 return
             
             # サーボを閉じる
-            move_servo(pwm2, SERVO1_CLOSED_ANGLE)
-            move_servo(pwm1, SERVO1_OPEN_ANGLE)
+            move_servo(pwm2, CLOSED_ANGLE)
+            move_servo(pwm1, OPEN_ANGLE)
             time.sleep(0.5)
 
             # 雑巾保管場所を下げる(下げる時間はまた後で設定)
@@ -280,7 +280,7 @@ def run_auto_test(pwm1, pwm2, poll_interval: float, retry_count: int = 0) -> Non
                 return  
             time.sleep(0.5) 
             # # サーボを開く
-            # move_servo(pwm2, SERVO1_OPEN_ANGLE)
+            # move_servo(pwm2, OPEN_ANGLE)
             # if not _send_payload_for(stop, 0.40, poll_interval):
             #     return
         elif GPIO.input(LIMIT2_PIN) == GPIO.LOW:  # もし左側のリミットスイッチにモーターが触れていたなら
@@ -289,8 +289,8 @@ def run_auto_test(pwm1, pwm2, poll_interval: float, retry_count: int = 0) -> Non
             if not move_until_limit([0, 0, 0, MOTOR_SPEED, 0, 0, 1, 1], LIMIT3_PIN, poll_interval):
                 return
             # サーボを閉じる
-            move_servo(pwm1, SERVO1_CLOSED_ANGLE)
-            move_servo(pwm2, SERVO1_OPEN_ANGLE)
+            move_servo(pwm1, CLOSED_ANGLE)
+            move_servo(pwm2, OPEN_ANGLE)
             time.sleep(0.5)  # サーボが閉じるのを待つ
             # 雑巾保管場所を下げる(下げる時間はまた後で設定)
             if not _send_payload_for([0, 0, MOTOR_SPEED, 0, 0, 0, 1, 1], 1, poll_interval):
@@ -303,8 +303,8 @@ def run_auto_test(pwm1, pwm2, poll_interval: float, retry_count: int = 0) -> Non
             print("どっちのリミットスイッチにも触れてなくてうぉ。雑巾装填機構がどちら側にあるか確認してください。")
             return
         # サーボを閉じる。モーターは止めたまま0.40秒待つ。
-        move_servo(pwm1, SERVO1_CLOSED_ANGLE)
-        move_servo(pwm2, SERVO1_CLOSED_ANGLE)
+        move_servo(pwm1, CLOSED_ANGLE)
+        move_servo(pwm2, CLOSED_ANGLE)
         _send_payload_for(stop, 0.40, poll_interval)
         print("[自動装填完了] 一連の動作が完了しました")
     finally:
