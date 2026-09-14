@@ -31,7 +31,7 @@ import RPi.GPIO as GPIO
 
 UART_DEVICE = os.environ.get("ZOUKIN_SOUTEN_UART_DEVICE", "/dev/ttyAMA1")
 
-MOTOR_SPEED = 255
+MOTOR_SPEED = 200
 
 # ===== サーボ設定：ここだけ変更すれば調整できます =====
 # BCM番号（物理ピン番号ではありません）
@@ -42,8 +42,6 @@ SERVO2_PIN = 19
 # サーボごとに回転方向が異なる場合は、それぞれの角度を逆に設定してください。
 SERVO1_OPEN_ANGLE = -90
 SERVO1_CLOSED_ANGLE = 0
-SERVO2_OPEN_ANGLE = SERVO1_OPEN_ANGLE
-SERVO2_CLOSED_ANGLE = SERVO1_CLOSED_ANGLE
 
 # プログラムを起動した時点の実際の状態に合わせます。
 # Falseなら、最初の丸ボタンで「開く」動作になります。
@@ -202,11 +200,11 @@ def set_servo_open_state(pwm1, pwm2, is_open: bool) -> None:
     """Set both servos to their configured open or closed position."""
     if is_open:
         servo1_angle = SERVO1_OPEN_ANGLE
-        servo2_angle = SERVO2_OPEN_ANGLE
+        servo2_angle = SERVO1_OPEN_ANGLE
         state_name = "OPEN"
     else:
         servo1_angle = SERVO1_CLOSED_ANGLE
-        servo2_angle = SERVO2_CLOSED_ANGLE
+        servo2_angle = SERVO1_CLOSED_ANGLE
         state_name = "CLOSED"
 
     if not move_servo(pwm1, servo1_angle):
@@ -252,8 +250,8 @@ def run_auto_test(pwm1, pwm2, poll_interval: float, retry_count: int = 0) -> Non
 
     try:
         # サーボを開く。モーターは止めたまま0.40秒待つ。
-        move_servo(pwm1, SERVO2_OPEN_ANGLE)
-        move_servo(pwm2, SERVO2_OPEN_ANGLE)
+        move_servo(pwm1, SERVO1_OPEN_ANGLE)
+        move_servo(pwm2, SERVO1_OPEN_ANGLE)
         if not _send_payload_for(stop, 0.40, poll_interval):
             return
         # 両方HIGHなら右側リミットをいったん離して再接触させ、最初からやり直す。
@@ -270,7 +268,8 @@ def run_auto_test(pwm1, pwm2, poll_interval: float, retry_count: int = 0) -> Non
                 return
             
             # サーボを閉じる
-            move_servo(pwm2, SERVO2_CLOSED_ANGLE)
+            move_servo(pwm2, SERVO1_CLOSED_ANGLE)
+            move_servo(pwm1, SERVO1_OPEN_ANGLE)
             time.sleep(0.5)
 
             # 雑巾保管場所を下げる(下げる時間はまた後で設定)
@@ -280,19 +279,18 @@ def run_auto_test(pwm1, pwm2, poll_interval: float, retry_count: int = 0) -> Non
             if not move_until_limit([0, MOTOR_SPEED, 0, 0, 0, 0, 1, 1], LIMIT2_PIN, poll_interval):
                 return  
             time.sleep(0.5) 
-            # サーボを開く
-            move_servo(pwm2, SERVO2_OPEN_ANGLE)
-            if not _send_payload_for(stop, 0.40, poll_interval):
-                return
+            # # サーボを開く
+            # move_servo(pwm2, SERVO1_OPEN_ANGLE)
+            # if not _send_payload_for(stop, 0.40, poll_interval):
+            #     return
         elif GPIO.input(LIMIT2_PIN) == GPIO.LOW:  # もし左側のリミットスイッチにモーターが触れていたなら
             print("[状態] 左側リミット位置として処理を開始")
             # 雑巾保管場所を上げる
             if not move_until_limit([0, 0, 0, MOTOR_SPEED, 0, 0, 1, 1], LIMIT3_PIN, poll_interval):
                 return
             # サーボを閉じる
-            move_servo(pwm1, SERVO2_CLOSED_ANGLE)
-            if not _send_payload_for(stop, 0.40, poll_interval):
-                return
+            move_servo(pwm1, SERVO1_CLOSED_ANGLE)
+            move_servo(pwm2, SERVO1_OPEN_ANGLE)
             time.sleep(0.5)  # サーボが閉じるのを待つ
             # 雑巾保管場所を下げる(下げる時間はまた後で設定)
             if not _send_payload_for([0, 0, MOTOR_SPEED, 0, 0, 0, 1, 1], 1, poll_interval):
@@ -301,17 +299,12 @@ def run_auto_test(pwm1, pwm2, poll_interval: float, retry_count: int = 0) -> Non
             if not move_until_limit([MOTOR_SPEED, 0, 0, 0, 0, 0, 1, 1], LIMIT1_PIN, poll_interval):
                 return
             time.sleep(0.5)  # スライドが完了するのを待つ
-            # サーボを開く
-            move_servo(pwm1, SERVO2_OPEN_ANGLE)
-            if not _send_payload_for(stop, 0.40, poll_interval):
-                return
-
         else:
             print("どっちのリミットスイッチにも触れてなくてうぉ。雑巾装填機構がどちら側にあるか確認してください。")
             return
         # サーボを閉じる。モーターは止めたまま0.40秒待つ。
         move_servo(pwm1, SERVO1_CLOSED_ANGLE)
-        move_servo(pwm2, SERVO2_CLOSED_ANGLE)
+        move_servo(pwm2, SERVO1_CLOSED_ANGLE)
         _send_payload_for(stop, 0.40, poll_interval)
         print("[自動装填完了] 一連の動作が完了しました")
     finally:
