@@ -32,6 +32,7 @@ import RPi.GPIO as GPIO
 UART_DEVICE = os.environ.get("ZOUKIN_SOUTEN_UART_DEVICE", "/dev/ttyAMA1")
 
 MOTOR_SPEED = 200
+STOP_PAYLOAD = [0, 0, 0, 0, 0, 0, 1, 1]
 
 # ===== サーボ設定：ここだけ変更すれば調整できます =====
 # BCM番号（物理ピン番号ではありません）
@@ -91,8 +92,15 @@ def _circle_pressed(values: List[int]) -> bool:
         values[CIRCLE_BUTTON_BYTE_INDEX], CIRCLE_BUTTON_MASK
     )
 
+
+def _send_stop() -> None:
+    """モーター停止命令を送る。呼び出し側で送信回数を管理する。"""
+    try:
+        afs_send(UART_DEVICE, STOP_PAYLOAD)
+    except Exception as e:
+        print("[UART SEND] stop failed ->", UART_DEVICE, repr(e))
+
 def move_until_limit(payload, limit_pin, poll_interval):
-    stop = [0, 0, 0, 0, 0, 0, 1, 1]
     print("[動作開始] リミットまで移動:", "pin=", limit_pin, "payload=", payload)
 
     try:
@@ -109,10 +117,7 @@ def move_until_limit(payload, limit_pin, poll_interval):
         return True
 
     finally:
-        try:
-            afs_send(UART_DEVICE, stop)  # 必ずモーター停止
-        except Exception as e:
-            print("[UART SEND] stop failed ->", UART_DEVICE, repr(e))
+        _send_stop()
 
 
 def move_right_and_reseat_limit(poll_interval: float) -> bool:
@@ -142,10 +147,7 @@ def move_right_and_reseat_limit(poll_interval: float) -> bool:
         print("[LIMIT] right limit reseat timed out")
         return False
     finally:
-        try:
-            afs_send(UART_DEVICE, [0, 0, 0, 0, 0, 0, 1, 1])
-        except Exception as e:
-            print("[UART SEND] right-limit stop failed ->", UART_DEVICE, repr(e))
+        _send_stop()
 
 
 def _motor_from_buttons(forward: bool, reverse: bool) -> Tuple[int, int]:
@@ -245,14 +247,13 @@ def run_auto_test(pwm1, pwm2, poll_interval: float, retry_count: int = 0) -> Non
     SERVO1:右側のサーボ
     SERVO2:左側のサーボ
     """
-    stop = [0, 0, 0, 0, 0, 0, 1, 1]
     print("[自動装填開始] retry=", retry_count)
 
     try:
         # サーボを開く。モーターは止めたまま0.40秒待つ。
         move_servo(pwm1, OPEN_ANGLE)
         move_servo(pwm2, OPEN_ANGLE)
-        if not _send_payload_for(stop, 0.40, poll_interval):
+        if not _send_payload_for(STOP_PAYLOAD, 0.40, poll_interval):
             return
         # 両方HIGHなら右側リミットをいったん離して再接触させ、最初からやり直す。
         if GPIO.input(LIMIT1_PIN) == GPIO.HIGH and GPIO.input(LIMIT2_PIN) == GPIO.HIGH:
@@ -281,7 +282,7 @@ def run_auto_test(pwm1, pwm2, poll_interval: float, retry_count: int = 0) -> Non
             time.sleep(0.5) 
             # # サーボを開く
             # move_servo(pwm2, OPEN_ANGLE)
-            # if not _send_payload_for(stop, 0.40, poll_interval):
+            # if not _send_payload_for(STOP_PAYLOAD, 0.40, poll_interval):
             #     return
         elif GPIO.input(LIMIT2_PIN) == GPIO.LOW:  # もし左側のリミットスイッチにモーターが触れていたなら
             print("[状態] 左側リミット位置として処理を開始")
@@ -305,19 +306,17 @@ def run_auto_test(pwm1, pwm2, poll_interval: float, retry_count: int = 0) -> Non
         # サーボを閉じる。モーターは止めたまま0.40秒待つ。
         move_servo(pwm1, CLOSED_ANGLE)
         move_servo(pwm2, CLOSED_ANGLE)
-        _send_payload_for(stop, 0.40, poll_interval)
+        _send_payload_for(STOP_PAYLOAD, 0.40, poll_interval)
         print("[自動装填完了] 一連の動作が完了しました")
     finally:
         # 終了・非常停止・UARTエラー時のいずれでもモーターを止める。
-        try:
-            afs_send(UART_DEVICE, stop)
-        except Exception as e:
-            print("[AUTO TEST] final stop failed ->", UART_DEVICE, repr(e))
+        _send_stop()
 
 
 def run_zoukin_souten(poll_interval: float = 0.02):
     last_sent = None
     last_circle_pressed = False
+    emergency_stop_sent = False
 
     print("[UART INIT] Zoukin Souten uses", UART_DEVICE)
     GPIO.setmode(GPIO.BCM)
@@ -330,6 +329,16 @@ def run_zoukin_souten(poll_interval: float = 0.02):
 
     try:
         while True:
+            if controller_state.is_emergency_stopped():
+                if not emergency_stop_sent:
+                    print("[安全停止] モーター停止命令を送信")
+                    _send_stop()
+                    last_sent = list(STOP_PAYLOAD)
+                    emergency_stop_sent = True
+                time.sleep(poll_interval)
+                continue
+
+            emergency_stop_sent = False
             vals = _get_values()
 
             circle_pressed = _circle_pressed(vals)
@@ -339,7 +348,7 @@ def run_zoukin_souten(poll_interval: float = 0.02):
             if circle_pressed and not last_circle_pressed:
                 print("[AUTO TEST] start")
                 run_auto_test(pwm1, pwm2, poll_interval)
-                payload = [0, 0, 0, 0, 0, 0, 1, 1]
+                payload = STOP_PAYLOAD
             else:
                 # 通常時は十字キーでモーターを操作する。
                 payload = _build_payload_from_controller(vals)
@@ -360,6 +369,7 @@ def run_zoukin_souten(poll_interval: float = 0.02):
     except KeyboardInterrupt:
         pass
     finally:
+        _send_stop()
         pwm1.stop()
         pwm2.stop()
         GPIO.cleanup(SERVO1_PIN)
