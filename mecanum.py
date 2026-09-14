@@ -56,8 +56,8 @@ def speeds_to_pwm_payload(fl: float, fr: float, rl: float, rr: float, dead: floa
                 1.0 = フル出力(255)まで許可、0.5 = 最大でも127程度に制限。
     """
     fl_f, fl_r = _speed_to_pwm_pair(fl, dead, max_speed)
-    fr_f, fr_r = _speed_to_pwm_pair(-fr, dead, max_speed)
-    rl_f, rl_r = _speed_to_pwm_pair(rl, dead, max_speed)
+    fr_f, fr_r = _speed_to_pwm_pair(fr, dead, max_speed)
+    rl_f, rl_r = _speed_to_pwm_pair(-rl, dead, max_speed)
     rr_f, rr_r = _speed_to_pwm_pair(rr, dead, max_speed)
     return [fl_f, fl_r, fr_f, fr_r, rl_f, rl_r, rr_f, rr_r]
 
