@@ -23,9 +23,10 @@ BUTTON_MASK_R1 = int(os.environ.get("AIR_CYLINDER_BUTTON_MASK_R1", "4"), 0)
 
 ERROR_RETRY_INTERVAL = 1.0
 FIRE_PERMISSION_YES = "YES"
-FIRE_TIME = 0.5
-RETURN_TIME = 0.5
-STOP_PAYLOAD = [0] * 8
+FIRE_TIME = 5
+RETURN_TIME = 5
+BOTH_OFF_PAYLOAD = [0] * 8
+STOP_PAYLOAD = BOTH_OFF_PAYLOAD
 
 # (物理アクション名, 逆に割り当てるコントローラーボタン, 出力チャンネル, [発射, 戻し])
 # 動作を増やすときは、この配列に1行追加します。
@@ -88,24 +89,27 @@ def _send_for(payload: List[int], seconds: float, poll_interval: float) -> bool:
 
 
 def _fire_and_return(action_number: int, action, poll_interval: float) -> bool:
-    """発射方向へ動かし、戻し方向へ動かして停止する。"""
+    """発射方向へ動かし、戻し方向へ動かして、最後は両方OFFにする。"""
     button_name, _button_mask, _output_indexes, _patterns = action
     if not _is_fire_allowed(button_name):
         print(f"[{button_name}] 発射許可なし")
         return False
 
     try:
+        # 発射中は片側だけON。発射が終わったら必ず両方OFFへ戻す。
         if not _send_for(
             _build_action_payload(action_number, 0), FIRE_TIME, poll_interval
         ):
             return False
-        return _send_for(
+        if not _send_for(
             _build_action_payload(action_number, 1),
             RETURN_TIME,
             poll_interval,
-        )
+        ):
+            return False
+        return True
     finally:
-        afs_send(UART_DEVICE, STOP_PAYLOAD)
+        afs_send(UART_DEVICE, BOTH_OFF_PAYLOAD)
 
 
 def run_air_cylinder(poll_interval: float = 0.02):
@@ -137,9 +141,9 @@ def run_air_cylinder(poll_interval: float = 0.02):
                 last_pressed[action_number] = is_pressed
 
             payload = (
-                [0] * 8
+                BOTH_OFF_PAYLOAD
                 if controller_state.is_emergency_stopped()
-                else STOP_PAYLOAD
+                else BOTH_OFF_PAYLOAD
             )
             try:
                 # 受信基板がいつ起動しても現在状態を受け取れるよう、
