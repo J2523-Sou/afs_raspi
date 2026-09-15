@@ -24,6 +24,7 @@ from typing import List, Tuple
 
 from lib.afs_uart import afs_send
 from lib import controller_state
+from gpiozero import AngularServo
 import RPi.GPIO as GPIO
 
 
@@ -41,18 +42,16 @@ SERVO2_PIN = 19
 
 # 開く・閉じる位置の角度（-90〜+90）
 # 2つのサーボで共通して使う角度を設定します。
-OPEN_ANGLE = -90
-CLOSED_ANGLE = 0
+OPEN_ANGLE = 0
+CLOSED_ANGLE = 20
 
 # プログラムを起動した時点の実際の状態に合わせます。
 # Falseなら、最初の丸ボタンで「開く」動作になります。
 START_OPEN = False
 
-# SG90のPWM設定。通常は変更不要です。
-ANGLE_RANGE = 180
-TIME_RANGE = 1.9
-MIN_TIME = 0.5
-CYCLE_TIME = 20.0
+# SG90の標準的なパルス幅範囲。中点(0度)は1.5msになります。
+SERVO_MIN_PULSE_WIDTH = 0.0010
+SERVO_MAX_PULSE_WIDTH = 0.0020
 CIRCLE_BUTTON_BYTE_INDEX = 0
 CIRCLE_BUTTON_MASK = 0b00000010
 
@@ -185,20 +184,17 @@ def _build_payload_from_controller(vals: List[int]) -> List[int]:
     return payload
 
 
-def move_servo(pwm, angle: float) -> bool:
-    """Move the servo to an angle from -90 to +90 degrees."""
+def move_servo(servo: AngularServo, angle: float) -> bool:
+    """角度を直接指定してサーボを動かす。"""
     if angle < -90 or angle > 90:
         return False
 
-    percent = (angle + 90) / ANGLE_RANGE
-    pulse_time = MIN_TIME + (TIME_RANGE * percent)
-    duty_cycle = (pulse_time / CYCLE_TIME) * 100
-    pwm.ChangeDutyCycle(duty_cycle)
-    print("[動作] サーボ移動: angle=", angle, "duty=", round(duty_cycle, 2))
+    servo.angle = angle
+    print("[動作] サーボ移動: angle=", angle)
     return True
 
 
-def set_servo_open_state(pwm1, pwm2, is_open: bool) -> None:
+def set_servo_open_state(servo1, servo2, is_open: bool) -> None:
     """Set both servos to their configured open or closed position."""
     if is_open:
         servo1_angle = OPEN_ANGLE
@@ -209,9 +205,9 @@ def set_servo_open_state(pwm1, pwm2, is_open: bool) -> None:
         servo2_angle = CLOSED_ANGLE
         state_name = "CLOSED"
 
-    if not move_servo(pwm1, servo1_angle):
+    if not move_servo(servo1, servo1_angle):
         raise ValueError("SERVO1 angle must be between -90 and +90")
-    if not move_servo(pwm2, servo2_angle):
+    if not move_servo(servo2, servo2_angle):
         raise ValueError("SERVO2 angle must be between -90 and +90")
 
     print(
@@ -240,7 +236,7 @@ def _send_payload_for(payload: List[int], seconds: float, poll_interval: float) 
     return True
 
 
-def run_auto_test(pwm1, pwm2, poll_interval: float, retry_count: int = 0) -> None:
+def run_auto_test(servo1, servo2, poll_interval: float, retry_count: int = 0) -> None:
     """実際の動き
     up_moter1:持ち上げるやつ
     slide_moter2:横に動くやつ
@@ -251,8 +247,8 @@ def run_auto_test(pwm1, pwm2, poll_interval: float, retry_count: int = 0) -> Non
 
     try:
         # サーボを開く。モーターは止めたまま0.40秒待つ。
-        move_servo(pwm1, OPEN_ANGLE)
-        move_servo(pwm2, OPEN_ANGLE)
+        move_servo(servo1, OPEN_ANGLE)
+        move_servo(servo2, OPEN_ANGLE)
         if not _send_payload_for(STOP_PAYLOAD, 0.40, poll_interval):
             return
         # 両方HIGHなら右側リミットをいったん離して再接触させ、最初からやり直す。
@@ -269,8 +265,8 @@ def run_auto_test(pwm1, pwm2, poll_interval: float, retry_count: int = 0) -> Non
                 return
             
             # サーボを閉じる
-            move_servo(pwm2, CLOSED_ANGLE)
-            move_servo(pwm1, OPEN_ANGLE)
+            move_servo(servo2, CLOSED_ANGLE)
+            move_servo(servo1, OPEN_ANGLE)
             time.sleep(0.5)
 
             # 雑巾保管場所を下げる(下げる時間はまた後で設定)
@@ -281,7 +277,7 @@ def run_auto_test(pwm1, pwm2, poll_interval: float, retry_count: int = 0) -> Non
                 return  
             time.sleep(0.5) 
             # # サーボを開く
-            # move_servo(pwm2, OPEN_ANGLE)
+            # move_servo(servo2, OPEN_ANGLE)
             # if not _send_payload_for(STOP_PAYLOAD, 0.40, poll_interval):
             #     return
         elif GPIO.input(LIMIT2_PIN) == GPIO.LOW:  # もし左側のリミットスイッチにモーターが触れていたなら
@@ -290,8 +286,8 @@ def run_auto_test(pwm1, pwm2, poll_interval: float, retry_count: int = 0) -> Non
             if not move_until_limit([0, 0, 0, MOTOR_SPEED, 0, 0, 1, 1], LIMIT3_PIN, poll_interval):
                 return
             # サーボを閉じる
-            move_servo(pwm1, CLOSED_ANGLE)
-            move_servo(pwm2, OPEN_ANGLE)
+            move_servo(servo1, CLOSED_ANGLE)
+            move_servo(servo2, OPEN_ANGLE)
             time.sleep(0.5)  # サーボが閉じるのを待つ
             # 雑巾保管場所を下げる(下げる時間はまた後で設定)
             if not _send_payload_for([0, 0, MOTOR_SPEED, 0, 0, 0, 1, 1], 1, poll_interval):
@@ -304,8 +300,8 @@ def run_auto_test(pwm1, pwm2, poll_interval: float, retry_count: int = 0) -> Non
             print("どっちのリミットスイッチにも触れてなくてうぉ。雑巾装填機構がどちら側にあるか確認してください。")
             return
         # サーボを閉じる。モーターは止めたまま0.40秒待つ。
-        move_servo(pwm1, CLOSED_ANGLE)
-        move_servo(pwm2, CLOSED_ANGLE)
+        move_servo(servo1, CLOSED_ANGLE)
+        move_servo(servo2, CLOSED_ANGLE)
         _send_payload_for(STOP_PAYLOAD, 0.40, poll_interval)
         print("[自動装填完了] 一連の動作が完了しました")
     finally:
@@ -320,12 +316,20 @@ def run_zoukin_souten(poll_interval: float = 0.02):
 
     print("[UART INIT] Zoukin Souten uses", UART_DEVICE)
     GPIO.setmode(GPIO.BCM)
-    GPIO.setup(SERVO1_PIN, GPIO.OUT)
-    GPIO.setup(SERVO2_PIN, GPIO.OUT)
-    pwm1 = GPIO.PWM(SERVO1_PIN, 50)
-    pwm2 = GPIO.PWM(SERVO2_PIN, 50)
-    pwm1.start(0)
-    pwm2.start(0)
+    servo1 = AngularServo(
+        SERVO1_PIN,
+        min_angle=-90,
+        max_angle=90,
+        min_pulse_width=SERVO_MIN_PULSE_WIDTH,
+        max_pulse_width=SERVO_MAX_PULSE_WIDTH,
+    )
+    servo2 = AngularServo(
+        SERVO2_PIN,
+        min_angle=-90,
+        max_angle=90,
+        min_pulse_width=SERVO_MIN_PULSE_WIDTH,
+        max_pulse_width=SERVO_MAX_PULSE_WIDTH,
+    )
 
     try:
         while True:
@@ -347,7 +351,7 @@ def run_zoukin_souten(poll_interval: float = 0.02):
             # ○による通常のサーボ開閉トグルは使わない。
             if circle_pressed and not last_circle_pressed:
                 print("[AUTO TEST] start")
-                run_auto_test(pwm1, pwm2, poll_interval)
+                run_auto_test(servo1, servo2, poll_interval)
                 payload = STOP_PAYLOAD
             else:
                 # 通常時は十字キーでモーターを操作する。
@@ -370,10 +374,8 @@ def run_zoukin_souten(poll_interval: float = 0.02):
         pass
     finally:
         _send_stop()
-        pwm1.stop()
-        pwm2.stop()
-        GPIO.cleanup(SERVO1_PIN)
-        GPIO.cleanup(SERVO2_PIN)
+        servo1.close()
+        servo2.close()
 
 
 run_receiver = run_zoukin_souten
