@@ -5,10 +5,11 @@ from __future__ import annotations
 
 import os
 import time
-from typing import List, Optional, Tuple
+from typing import List
 
 from lib.afs_uart import afs_send
 from lib import controller_state
+import zoukin_souten
 
 
 # ソレノイド基板はGPIO4(TX) / GPIO5(RX)に割り当てたttyAMA2を使用する。
@@ -20,47 +21,91 @@ BUTTON_BYTE_INDEX = int(os.environ.get("AIR_CYLINDER_BUTTON_BYTE_INDEX", "1"))
 BUTTON_MASK_L1 = int(os.environ.get("AIR_CYLINDER_BUTTON_MASK_L1", "2"), 0)
 BUTTON_MASK_R1 = int(os.environ.get("AIR_CYLINDER_BUTTON_MASK_R1", "4"), 0)
 
-# PIC出力は2本のシリンダーごとに2チャンネルを使う。
-# 各ペアは必ず片方だけONにする。
-CYLINDER_1_A_OUTPUT_INDEX = 2
-CYLINDER_1_B_OUTPUT_INDEX = 3
-CYLINDER_2_A_OUTPUT_INDEX = 4
-CYLINDER_2_B_OUTPUT_INDEX = 5
-OUTPUT_ON = 255
-OUTPUT_OFF = 0
 ERROR_RETRY_INTERVAL = 1.0
+FIRE_PERMISSION_YES = "YES"
+FIRE_TIME = 0.5
+RETURN_TIME = 0.5
+STOP_PAYLOAD = [0] * 8
+
+# (物理アクション名, 逆に割り当てるコントローラーボタン, 出力チャンネル, [発射, 戻し])
+# 動作を増やすときは、この配列に1行追加します。
+CYLINDER_ACTIONS = [
+    # コントローラーL1でR1側、R1でL1側を動かす。
+    ("R1", BUTTON_MASK_L1, (2, 3), [(255, 0), (0, 255)]),
+    ("L1", BUTTON_MASK_R1, (4, 5), [(255, 0), (0, 255)]),
+]
 
 
-def _get_cylinder_states(values=None) -> Optional[Tuple[bool, bool]]:
-    """(R1, L1)の押下状態を返す。"""
-    if values is None:
-        values = controller_state.get_values()
-    if not values or len(values) <= BUTTON_BYTE_INDEX:
-        return None
-
-    button_byte = int(values[BUTTON_BYTE_INDEX])
-    return bool(button_byte & BUTTON_MASK_R1), bool(button_byte & BUTTON_MASK_L1)
+def _is_pressed(values, button_mask):
+    return bool(
+        values
+        and len(values) > BUTTON_BYTE_INDEX
+        and values[BUTTON_BYTE_INDEX] & button_mask
+    )
 
 
-def _build_payload(
-    cylinder1_b_selected: bool,
-    cylinder2_b_selected: bool,
-) -> List[int]:
-    """2組の相補出力を持つ8バイトペイロードを作る。"""
+def _build_payload(selected_actions) -> List[int]:
+    """選択中の送信値を、対応表から8バイトにまとめる。"""
     payload = [0] * 8
-    payload[CYLINDER_1_A_OUTPUT_INDEX] = (
-        OUTPUT_OFF if cylinder1_b_selected else OUTPUT_ON
-    )
-    payload[CYLINDER_1_B_OUTPUT_INDEX] = (
-        OUTPUT_ON if cylinder1_b_selected else OUTPUT_OFF
-    )
-    payload[CYLINDER_2_A_OUTPUT_INDEX] = (
-        OUTPUT_OFF if cylinder2_b_selected else OUTPUT_ON
-    )
-    payload[CYLINDER_2_B_OUTPUT_INDEX] = (
-        OUTPUT_ON if cylinder2_b_selected else OUTPUT_OFF
-    )
+    for action_number, action in enumerate(CYLINDER_ACTIONS):
+        _button, _mask, output_indexes, patterns = action
+        for output_index, output_value in zip(
+            output_indexes, patterns[selected_actions[action_number]]
+        ):
+            payload[output_index] = output_value
     return payload
+
+
+def _build_action_payload(action_number: int, pattern_number: int) -> List[int]:
+    """指定した1アクションだけを動かすペイロードを作る。"""
+    payload = [0] * 8
+    _button, _mask, output_indexes, patterns = CYLINDER_ACTIONS[action_number]
+    for output_index, output_value in zip(
+        output_indexes, patterns[pattern_number]
+    ):
+        payload[output_index] = output_value
+    return payload
+
+
+def _is_fire_allowed(button_name: str) -> bool:
+    zoukin_souten.fire_cylinder_check()
+    permissions = {
+        "R1": zoukin_souten.R1_CYLINDER_FIRE_PARMISSION,
+        "L1": zoukin_souten.L1_CYLINDER_FIRE_PARMISSION,
+    }
+    return permissions.get(button_name) == FIRE_PERMISSION_YES
+
+
+def _send_for(payload: List[int], seconds: float, poll_interval: float) -> bool:
+    """指定した出力を送信し、非常停止や切断時は中断する。"""
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        if controller_state.is_emergency_stopped() or not controller_state.get_values():
+            return False
+        afs_send(UART_DEVICE, payload)
+        time.sleep(poll_interval)
+    return True
+
+
+def _fire_and_return(action_number: int, action, poll_interval: float) -> bool:
+    """発射方向へ動かし、戻し方向へ動かして停止する。"""
+    button_name, _button_mask, _output_indexes, _patterns = action
+    if not _is_fire_allowed(button_name):
+        print(f"[{button_name}] 発射許可なし")
+        return False
+
+    try:
+        if not _send_for(
+            _build_action_payload(action_number, 0), FIRE_TIME, poll_interval
+        ):
+            return False
+        return _send_for(
+            _build_action_payload(action_number, 1),
+            RETURN_TIME,
+            poll_interval,
+        )
+    finally:
+        afs_send(UART_DEVICE, STOP_PAYLOAD)
 
 
 def run_air_cylinder(poll_interval: float = 0.02):
@@ -72,10 +117,7 @@ def run_air_cylinder(poll_interval: float = 0.02):
 
     last_logged_payload = None
     last_logged_button_bytes = None
-    cylinder1_b_selected = False
-    cylinder2_b_selected = False
-    last_r1_pressed = False
-    last_l1_pressed = False
+    last_pressed = [False] * len(CYLINDER_ACTIONS)
 
     try:
         while True:
@@ -86,29 +128,18 @@ def run_air_cylinder(poll_interval: float = 0.02):
                     print("[CONTROLLER] button bytes[0:3]:", button_bytes)
                     last_logged_button_bytes = button_bytes
 
-            states = _get_cylinder_states(values)
-            r1_pressed, l1_pressed = states if states is not None else (False, False)
+            for action_number, action in enumerate(CYLINDER_ACTIONS):
+                button_name, button_mask, _outputs, patterns = action
+                is_pressed = _is_pressed(values, button_mask)
 
-            # 押した瞬間に、対応するペア内の有効チャンネルを切り替える。
-            # 長押し中は現在の組み合わせを維持する。
-            if r1_pressed and not last_r1_pressed:
-                cylinder1_b_selected = not cylinder1_b_selected
-                print(
-                    "[R1] cylinder1 ->",
-                    "CH2" if cylinder1_b_selected else "CH1",
-                )
-            if l1_pressed and not last_l1_pressed:
-                cylinder2_b_selected = not cylinder2_b_selected
-                print(
-                    "[L1] cylinder2 ->",
-                    "CH4" if cylinder2_b_selected else "CH3",
-                )
-            last_r1_pressed = r1_pressed
-            last_l1_pressed = l1_pressed
+                if is_pressed and not last_pressed[action_number]:
+                    _fire_and_return(action_number, action, poll_interval)
+                last_pressed[action_number] = is_pressed
 
-            payload = [0] * 8 if controller_state.is_emergency_stopped() else _build_payload(
-                cylinder1_b_selected,
-                cylinder2_b_selected,
+            payload = (
+                [0] * 8
+                if controller_state.is_emergency_stopped()
+                else STOP_PAYLOAD
             )
             try:
                 # 受信基板がいつ起動しても現在状態を受け取れるよう、
