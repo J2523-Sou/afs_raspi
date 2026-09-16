@@ -129,6 +129,22 @@ deactivate
 
 受信側では、`vals[0]` のbit5〜bit7、`vals[1]` のbit0、`vals[2]` の全ビットが未使用です。新しいボタンを追加する場合は、コントローラー送信側のビット割り当ても確認してください。
 
+## エアシリンダーだけを起動する場合
+
+```bash
+python air_cylinder.py
+```
+
+単独起動でも同じプロセス内でコントローラー受信を開始します。
+`run_all.py` や `controller_receive.py` との同時起動は避けてください
+（受信ポート5001が競合します）。
+`[UART SEND] device=... frames=... payload=...` は送信成功回数を約1秒ごとに表示します。
+`failed` が出る場合は、その例外と送信先デバイスを確認してください。
+このログはシリアル書き込みの完了を示し、基板での受信を保証するものではありません。
+L1/R1の判定は受信データの2バイト目の `0x02` / `0x04` に固定しています。
+以前の `AIR_CYLINDER_BUTTON_BYTE_INDEX` / `AIR_CYLINDER_BUTTON_MASK_L1` /
+`AIR_CYLINDER_BUTTON_MASK_R1` 環境変数は使用しません。
+
 ## 主なファイル
 
 - `run_all.py`: 各機能をまとめて起動

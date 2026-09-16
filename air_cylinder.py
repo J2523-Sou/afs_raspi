@@ -16,9 +16,11 @@ from lib import controller_state
 UART_DEVICE = os.environ.get("AIR_CYLINDER_UART_DEVICE", "/dev/ttyAMA2")
 
 # 7バイト受信形式のdata2: L1=bit1 (0x02), R1=bit2 (0x04)
-BUTTON_BYTE_INDEX = int(os.environ.get("AIR_CYLINDER_BUTTON_BYTE_INDEX", "1"))
-BUTTON_MASK_L1 = int(os.environ.get("AIR_CYLINDER_BUTTON_MASK_L1", "2"), 0)
-BUTTON_MASK_R1 = int(os.environ.get("AIR_CYLINDER_BUTTON_MASK_R1", "4"), 0)
+# controller_receive.py / README.md の通信形式に合わせる。
+# 古い環境変数によって受信済みのL1/R1が無視されないよう固定する。
+BUTTON_BYTE_INDEX = 1
+BUTTON_MASK_L1 = 0x02
+BUTTON_MASK_R1 = 0x04
 
 # PIC出力は2本のシリンダーごとに2チャンネルを使う。
 # 各ペアは必ず片方だけONにする。
@@ -29,6 +31,7 @@ CYLINDER_2_B_OUTPUT_INDEX = 5
 OUTPUT_ON = 255
 OUTPUT_OFF = 0
 ERROR_RETRY_INTERVAL = 1.0
+SEND_LOG_INTERVAL = 1.0
 
 
 def _get_cylinder_states(values=None) -> Optional[Tuple[bool, bool]]:
@@ -71,6 +74,8 @@ def run_air_cylinder(poll_interval: float = 0.02):
     )
 
     last_logged_payload = None
+    last_send_log_at = None
+    sent_frames = 0
     last_logged_button_bytes = None
     cylinder1_b_selected = False
     cylinder2_b_selected = False
@@ -114,11 +119,16 @@ def run_air_cylinder(poll_interval: float = 0.02):
                 # 受信基板がいつ起動しても現在状態を受け取れるよう、
                 # zoukin_souten.py と同じく毎ループUART送信する。
                 afs_send(UART_DEVICE, payload)
-                if payload != last_logged_payload:
-                    print("[UART SEND] payload:", payload)
+                sent_frames += 1
+                now = time.monotonic()
+                if (payload != last_logged_payload or last_send_log_at is None
+                        or now - last_send_log_at >= SEND_LOG_INTERVAL):
+                    print("[UART SEND] device=%s frames=%d payload=%s"
+                          % (UART_DEVICE, sent_frames, payload), flush=True)
                     last_logged_payload = list(payload)
+                    last_send_log_at = now
             except Exception as exc:
-                print("[UART SEND] failed ->", UART_DEVICE, repr(exc))
+                print("[UART SEND] failed ->", UART_DEVICE, repr(exc), flush=True)
                 time.sleep(ERROR_RETRY_INTERVAL)
                 continue
 
@@ -127,5 +137,15 @@ def run_air_cylinder(poll_interval: float = 0.02):
         pass
 
 
-if __name__ == "__main__":
+def main():
+    # controller_state はプロセス内の共有メモリなので、受信も同じプロセスで行う。
+    # run_all.py は受信スレッドを起動済みのため run_air_cylinder() を直接使う。
+    from threading import Thread
+    from controller_receive import run_receiver
+
+    Thread(target=run_receiver, daemon=True).start()
     run_air_cylinder()
+
+
+if __name__ == "__main__":
+    main()
