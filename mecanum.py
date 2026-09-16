@@ -29,6 +29,9 @@ def apply_input_deadzone(value: float, deadzone: float = INPUT_DEADZONE) -> floa
 
 
 def compute_wheel_speeds(lx: float, ly: float, rx: float) -> Tuple[float, float, float, float]:
+    """旧後方から見た左側を前として、元の配線順 (fl, fr, rl, rr) へ変換する。"""
+    # 新しい前進は旧左方向、新しい右移動は旧前方向。旋回は変更しない。
+    lx, ly = -ly, lx
     fl = ly + lx + rx
     fr = ly - lx - rx
     rl = ly - lx + rx

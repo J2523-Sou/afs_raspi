@@ -3,6 +3,30 @@ import pytest
 from controller_receive import _recv_exact
 from lib import controller_state
 from lib.afs_uart import _normalize_payload, _resolve_uart_device
+from mecanum import compute_wheel_speeds, speeds_to_pwm_payload
+
+
+@pytest.mark.parametrize(
+    "axes, expected",
+    [
+        ((0, 1, 0), (-1, 1, 1, -1)),  # Forward -> old left.
+        ((0, -1, 0), (1, -1, -1, 1)),  # Backward -> old right.
+        ((1, 0, 0), (1, 1, 1, 1)),  # Right -> old forward.
+        ((-1, 0, 0), (-1, -1, -1, -1)),  # Left -> old backward.
+        ((0, 0, 1), (1, -1, 1, -1)),  # Rotation unchanged.
+        ((0, 0, -1), (-1, 1, -1, 1)),
+        ((0, 0, 0), (0, 0, 0, 0)),
+        ((1, 1, 1), (1 / 3, 1 / 3, 1, -1 / 3)),
+    ],
+)
+def test_mecanum_uses_old_left_as_front(axes, expected):
+    assert compute_wheel_speeds(*axes) == pytest.approx(expected)
+
+
+def test_mecanum_forward_pwm_keeps_original_wiring_order():
+    assert speeds_to_pwm_payload(*compute_wheel_speeds(0, 1, 0)) == [
+        0, 255, 255, 0, 255, 0, 0, 255,
+    ]
 
 
 class ChunkedConnection:
