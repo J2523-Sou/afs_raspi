@@ -26,13 +26,22 @@ def afs_init(ip, port):
     PORT = port  # 必要なら int に変換
 
 def _resolve_uart_device(uartNo):
-    if isinstance(uartNo, int):
-        return f"/dev/ttyAMA{uartNo}"
+    if isinstance(uartNo, bool):
+        raise ValueError("UART番号は0、1、2のいずれかで指定してください")
 
-    uart_text = str(uartNo)
-    if uart_text.isdigit():
-        return f"/dev/ttyAMA{uart_text}"
-    return uart_text
+    if isinstance(uartNo, int):
+        uart_number = uartNo
+    else:
+        uart_text = str(uartNo)
+        if uart_text.startswith("/dev/ttyAMA"):
+            uart_text = uart_text.removeprefix("/dev/ttyAMA")
+        if not uart_text.isdigit():
+            raise ValueError("UART番号は0、1、2のいずれかで指定してください")
+        uart_number = int(uart_text)
+
+    if uart_number not in (0, 1, 2):
+        raise ValueError(f"使用できるUARTはUART0、UART1、UART2のみです: {uartNo}")
+    return f"/dev/ttyAMA{uart_number}"
 
 
 def _normalize_payload(data):
@@ -61,6 +70,18 @@ def _close_serial(ser):
         ser.close()
     except Exception:
         pass
+
+
+def _send_frame(device, ser, frame):
+    try:
+        ser.write(frame)
+        ser.flush()
+    except Exception:
+        with _connections_lock:
+            if _connections.get(device) is ser:
+                _connections.pop(device, None)
+        _close_serial(ser)
+        raise
 
 
 def _get_device_lock(device):
@@ -113,13 +134,5 @@ def afs_uart(uartNo, data):
             with _connections_lock:
                 _connections[device] = ser
 
-        try:
-            ser.write(frame)
-            ser.flush()
-        except Exception:
-            with _connections_lock:
-                if _connections.get(device) is ser:
-                    _connections.pop(device, None)
-            _close_serial(ser)
-            raise
+        _send_frame(device, ser, frame)
         
