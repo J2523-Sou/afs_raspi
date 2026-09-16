@@ -13,6 +13,7 @@ class AirCylinderTests(unittest.TestCase):
         self.start_patch("afs_send", self.send)
         self.start_patch("controller_state.get_values", lambda: [0, 0, 0])
         self.start_patch("controller_state.is_emergency_stopped", lambda: False)
+        self.start_patch("_get_fire_permissions", lambda: (True, True))
 
     def start_patch(self, name, value):
         patcher = patch("air_cylinder." + name, value)
@@ -65,6 +66,14 @@ class AirCylinderTests(unittest.TestCase):
              patch.object(air, "_fire_and_return", return_value=True) as fire:
             air.run_air_cylinder()
         self.assertEqual([call.args[0] for call in fire.call_args_list], [1, 2])
+
+    def test_button_does_not_fire_without_side_permission(self):
+        values = [[0, 2, 0], [0, 4, 0], KeyboardInterrupt]
+        with patch.object(air.controller_state, "get_values", side_effect=values), \
+             patch.object(air, "_get_fire_permissions", return_value=(False, True)), \
+             patch.object(air, "_fire_and_return", return_value=True) as fire:
+            air.run_air_cylinder()
+        self.assertEqual([call.args[0] for call in fire.call_args_list], [2])
 
     def test_idle_outputs_are_all_off(self):
         with patch.object(air.controller_state, "get_values", side_effect=[[], KeyboardInterrupt]):

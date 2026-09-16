@@ -49,6 +49,19 @@ def _get_cylinder_states(values=None) -> Optional[Tuple[bool, bool]]:
     return bool(button_byte & BUTTON_MASK_R1), bool(button_byte & BUTTON_MASK_L1)
 
 
+def _get_fire_permissions() -> Tuple[bool, bool]:
+    """(左側, 右側)のシリンダー発射許可を取得する。"""
+    from zoukin_souten import (
+        HIDARI_CYLINDER_FIRE_PARMISSION,
+        MIGI_CYLINDER_FIRE_PARMISSION,
+    )
+
+    return (
+        bool(HIDARI_CYLINDER_FIRE_PARMISSION),
+        bool(MIGI_CYLINDER_FIRE_PARMISSION),
+    )
+
+
 def _build_action_payload(cylinder: int, returning: bool) -> List[int]:
     """指定したシリンダーの発射側または戻し側だけをONにする。"""
     outputs = {
@@ -112,9 +125,10 @@ def run_air_cylinder(poll_interval: float = 0.02):
 
             states = _get_cylinder_states(values)
             r1_pressed, l1_pressed = states if states is not None else (False, False)
+            left_permission, right_permission = _get_fire_permissions()
 
-            fire1 = l1_pressed and not last_l1_pressed
-            fire2 = r1_pressed and not last_r1_pressed
+            fire1 = left_permission and l1_pressed and not last_l1_pressed
+            fire2 = right_permission and r1_pressed and not last_r1_pressed
             last_r1_pressed = r1_pressed
             last_l1_pressed = l1_pressed
 

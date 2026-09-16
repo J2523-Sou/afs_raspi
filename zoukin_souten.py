@@ -60,8 +60,8 @@ LIMIT2_PIN = 12 # 左側のリミットスイッチ
 LIMIT3_PIN = 9  # サーボの先のリミットスイッチ
 LIMIT_RESEAT_TIMEOUT = 3.0
 
-HIDARI_CYLINDER_FIRE_PARMISSION = "NO"
-MIGI_CYLINDER_FIRE_PARMISSION = "NO"
+HIDARI_CYLINDER_FIRE_PARMISSION = False
+MIGI_CYLINDER_FIRE_PARMISSION = False
 
 
 GPIO.setmode(GPIO.BCM)
@@ -362,6 +362,7 @@ def run_zoukin_souten(poll_interval: float = 0.02):
                 continue
 
             emergency_stop_sent = False
+            fire_cylinder_check()
             vals = _get_values()
 
             circle_pressed = _circle_pressed(vals)
