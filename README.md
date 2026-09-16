@@ -131,3 +131,33 @@ deactivate
 - `zoukin_souten.py`: 雑巾装填の制御
 - `air_cylinder.py`: エアシリンダーの制御
 - `debug_server.py`: ポート `8080` のデバッグダッシュボード
+
+## 雑巾装填の共通関数テスト
+
+`zoukin_souten_motor_test.py` は、`zoukin_souten.py` の `move_until_limit()` を直接呼び出します。リミットスイッチを監視し、到達時・中断時に同じ停止処理を通ります。実機テスト時は、このプログラムが `controller_receive` も起動するため、コントローラーを接続してから動かしてください。
+
+まず設定だけ確認します。
+
+```bash
+python zoukin_souten_motor_test.py --dry-run --motor 1 --direction forward --pwm 40 --limit right
+```
+
+実機テストは、`run_all.py` を停止し、モーターを低いPWMで短時間だけ動かせる状態にしてから実行します。
+
+```bash
+python zoukin_souten_motor_test.py --execute --method afs_send --motor 1 --direction forward --pwm 40 --limit right
+```
+
+`--limit left` なら左側リミットスイッチ（現在のGPIO BCM12）を使います。現在のピン設定は、右側がBCM9、左側がBCM12、先端がBCM8です。
+
+`--method zoukin_souten` を指定すると、`move_until_limit()` 経由の既存処理をテストできます。
+
+8バイト配列をそのまま送る場合は `--payload` を使います。例えば次の配列をUART1へ送信します。
+
+```bash
+python zoukin_souten_motor_test.py \
+	--execute \
+	--method afs_send \
+	--payload 0 80 0 0 0 0 1 1 \
+	--limit right
+```

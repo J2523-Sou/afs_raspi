@@ -74,7 +74,13 @@ def test_recv_exact_returns_none_when_connection_closes_early():
 def test_uart_device_numbers_are_resolved_consistently():
     assert _resolve_uart_device(0) == "/dev/ttyAMA0"
     assert _resolve_uart_device("2") == "/dev/ttyAMA2"
-    assert _resolve_uart_device("/tmp/virtual-uart") == "/tmp/virtual-uart"
+    assert _resolve_uart_device("/dev/ttyAMA1") == "/dev/ttyAMA1"
+
+
+@pytest.mark.parametrize("uart_number", [-1, 3, "3", "/tmp/virtual-uart", True])
+def test_uart_device_rejects_uart_outside_zero_to_two(uart_number):
+    with pytest.raises(ValueError):
+        _resolve_uart_device(uart_number)
 
 
 def test_uart_payload_is_normalized_to_eight_bytes():
