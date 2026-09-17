@@ -1,5 +1,4 @@
 # エアシリンダー
-# UART2
 
 from __future__ import annotations
 
