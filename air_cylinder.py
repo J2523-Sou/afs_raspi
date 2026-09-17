@@ -74,10 +74,11 @@ def _build_action_payload(cylinder: int, returning: bool) -> List[int]:
 
 
 def _send_for(payload: List[int], seconds: float, poll_interval: float) -> bool:
-    """待機中もUARTを更新し、非常停止・入力切断を監視する。"""
+    """UARTを更新し、非常停止・入力切断を監視する。"""
     deadline = time.monotonic() + seconds
     while time.monotonic() < deadline:
-        if controller_state.is_emergency_stopped() or not controller_state.get_values():
+        values = controller_state.get_values()
+        if controller_state.is_emergency_stopped() or not values:
             return False
         afs_send(UART_DEVICE, payload)
         time.sleep(poll_interval)
