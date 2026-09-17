@@ -60,31 +60,13 @@ LIMIT2_PIN = 12 # 左側のリミットスイッチ
 LIMIT3_PIN = 9  # サーボの先のリミットスイッチ
 LIMIT_RESEAT_TIMEOUT = 3.0
 
-HIDARI_CYLINDER_FIRE_PARMISSION = False
-MIGI_CYLINDER_FIRE_PARMISSION = False
-
+SOUTEN_KIKOU_ICHI = "NULL"  # 雑巾装填機構の位置を示す（右,左） まだプログラムに追加してないので後から絶対に追加する.
 
 GPIO.setmode(GPIO.BCM)
 GPIO.setup(LIMIT1_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 GPIO.setup(LIMIT2_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 GPIO.setup(LIMIT3_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
-def fire_cylinder_check():
-    "それぞれのエアシリンダが発射可能状態かどうかチェックする"
-    global HIDARI_CYLINDER_FIRE_PARMISSION, MIGI_CYLINDER_FIRE_PARMISSION
-
-    if GPIO.input(LIMIT1_PIN) == GPIO.LOW:
-        HIDARI_CYLINDER_FIRE_PARMISSION = True
-    else:
-        HIDARI_CYLINDER_FIRE_PARMISSION = False
-
-    if GPIO.input(LIMIT2_PIN) == GPIO.LOW:
-        MIGI_CYLINDER_FIRE_PARMISSION = True
-    else:
-        MIGI_CYLINDER_FIRE_PARMISSION = False
-
-
-    return HIDARI_CYLINDER_FIRE_PARMISSION, MIGI_CYLINDER_FIRE_PARMISSION
 
 
 def _u8(value: int) -> int:
@@ -131,7 +113,6 @@ def move_until_limit(payload, limit_pin, poll_interval):
 
         # ここに来たらリミットスイッチが押された
         print("[動作完了] リミット到達: pin=", limit_pin)
-        fire_cylinder_check()  # リミットスイッチの状態を更新
         return True
 
     finally:
@@ -362,7 +343,6 @@ def run_zoukin_souten(poll_interval: float = 0.02):
                 continue
 
             emergency_stop_sent = False
-            fire_cylinder_check()
             vals = _get_values()
 
             circle_pressed = _circle_pressed(vals)
