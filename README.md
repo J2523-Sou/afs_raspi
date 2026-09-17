@@ -110,8 +110,8 @@ deactivate
 | 十字キー ← / → | `vals[1]` bit5 / bit6 | 装填モーター2の正転 / 逆転 |
 | ○ | `vals[0]` bit1 | サーボ位置A / Bの切り替え |
 | Options | `vals[0]` bit4 | 非常停止ロックのON / OFF |
-| L1 | `vals[1]` bit1 | エアシリンダー2のCH3 / CH4切り替え |
-| R1 | `vals[1]` bit2 | エアシリンダー1のCH1 / CH2切り替え |
+| L1 | `vals[1]` bit1 | シリンダー1：ソレノイド1→2→両方OFF |
+| R1 | `vals[1]` bit2 | シリンダー2：ソレノイド3→4→両方OFF |
 | × / □ / △ | `vals[0]` bit0 / bit2 / bit3 | 受信・デバッグ画面表示のみ。機構操作には未使用 |
 
 ### 空いている操作
@@ -138,12 +138,18 @@ python air_cylinder.py
 単独起動でも同じプロセス内でコントローラー受信を開始します。
 `run_all.py` や `controller_receive.py` との同時起動は避けてください
 （受信ポート5001が競合します）。
-`[UART SEND] device=... frames=... payload=...` は送信成功回数を約1秒ごとに表示します。
+待機中の `[UART SEND] device=... idle_frames=... payload=...` は待機フレームの送信成功回数を約1秒ごとに表示します。
 `failed` が出る場合は、その例外と送信先デバイスを確認してください。
 このログはシリアル書き込みの完了を示し、基板での受信を保証するものではありません。
 L1/R1の判定は受信データの2バイト目の `0x02` / `0x04` に固定しています。
 以前の `AIR_CYLINDER_BUTTON_BYTE_INDEX` / `AIR_CYLINDER_BUTTON_MASK_L1` /
 `AIR_CYLINDER_BUTTON_MASK_R1` 環境変数は使用しません。
+
+ボタンを押すと、対象ペアの発射側だけを0.5秒ON、続いて戻し側だけを0.5秒ONにし、最後に両方OFFにします。
+L1はソレノイド1・2（送信配列のindex 2・3）、R1は3・4（index 4・5）です。
+`air_cylinder.py` 冒頭の `FIRE_TIME`（発射）と `RETURN_TIME`（戻し）で秒数を変更できます。
+長押しでは繰り返さず、同時押しは1・2の往復後に3・4を動かします。
+動作中は `[CYLINDER ...] FIRE / RETURN` を表示し、非常停止・入力切断で中断して全出力OFFを送信します。
 
 ## 主なファイル
 
