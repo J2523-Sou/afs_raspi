@@ -42,10 +42,10 @@ SERVO2_PIN = 19
 
 # 開く・閉じる位置の角度（-90〜+90）
 # 2つのサーボで共通して使う角度を設定します。
-HIDARI_OPEN_ANGLE = -20
-HIDARI_CLOSED_ANGLE = 10
-MIGI_OPEN_ANGLE = -15
-MIGI_CLOSED_ANGLE = 20
+HIDARI_OPEN_ANGLE = -30
+HIDARI_CLOSED_ANGLE = 20
+MIGI_OPEN_ANGLE = 10
+MIGI_CLOSED_ANGLE = 35
 
 # プログラムを起動した時点の実際の状態に合わせます。
 # Falseなら、最初の丸ボタンで「開く」動作になります。
@@ -284,7 +284,7 @@ def run_auto_test(servo1, servo2, poll_interval: float, retry_count: int = 0) ->
             # 雑巾保管場所を上げる
             if not move_until_limit([0, 0, 0, MOTOR_SPEED, 0, 0, 1, 1], LIMIT3_PIN, poll_interval):
                 return
-            
+
             # サーボを閉じる
             move_servo(servo2, MIGI_CLOSED_ANGLE)
             move_servo(servo1, HIDARI_CLOSED_ANGLE)
