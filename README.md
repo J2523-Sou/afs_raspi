@@ -174,6 +174,23 @@ python zoukin_souten_motor_test.py --execute --method afs_send --motor 1 --direc
 
 `--method zoukin_souten` を指定すると、`move_until_limit()` 経由の既存処理をテストできます。
 
+## UART1の5〜8バイト目だけを送信する
+
+`lib.afs_uart.afs_send_tail()`を使うと、UARTフレーム全体を組み立てずに5バイト目以降を更新できます。
+引数の`data`は5バイト目から順番に入り、1〜4個を指定できます。残りのバイトと先頭4バイトは、同じプロセスで最後に送信した値を引き継ぎます。
+
+```python
+from lib.afs_uart import afs_send_tail
+
+# UART1の5〜8バイト目を [10, 20, 30, 40] にする
+afs_send_tail(1, [10, 20, 30, 40])
+
+# 5バイト目だけを 255 に変更する
+afs_send_tail("/dev/ttyAMA1", [255])
+```
+
+`zoukin_souten.py`と別プロセスで同時にUART1を送信する場合、後から送信された8バイトフレームが前の値を上書きします。5〜8バイト目を保持して使う場合は、同じプロセスからこの関数を呼び出し、必要なら制御ループ内で繰り返し送信してください。
+
 8バイト配列をそのまま送る場合は `--payload` を使います。例えば次の配列をUART1へ送信します。
 
 ```bash

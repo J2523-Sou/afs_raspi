@@ -33,7 +33,7 @@ import RPi.GPIO as GPIO
 UART_DEVICE = os.environ.get("ZOUKIN_SOUTEN_UART_DEVICE", "/dev/ttyAMA1")
 
 MOTOR_SPEED = 150
-STOP_PAYLOAD = [0, 0, 0, 0, 0, 0, 1, 1]
+STOP_PAYLOAD = [0, 0, 0, 0, 0, 0, 0, 0]
 
 # ===== サーボ設定：ここだけ変更すれば調整できます =====
 # BCM番号（物理ピン番号ではありません）
@@ -177,32 +177,6 @@ def _motor_from_buttons(forward: bool, reverse: bool) -> Tuple[int, int]:
     if reverse:
         return 0, 255
     return 0, 0
-
-
-def _build_payload_from_controller(vals: List[int]) -> List[int]:
-    payload = [1] * 8
-
-    button_bytes = vals[1] if len(vals) > 1 else 0
-    up = _button_pressed(button_bytes, 0b00001000)
-    down = _button_pressed(button_bytes, 0b00010000)
-    left = _button_pressed(button_bytes, 0b00100000)
-    right = _button_pressed(button_bytes, 0b01000000)
-
-    # payload[0]/[1]は横スライド、payload[2]/[3]は上下動作に対応する。
-    # 右キーは横スライド正転、左キーは横スライド逆転にする。
-    m1_pwm, m1_dir = _motor_from_buttons(right, left)
-    m2_pwm, m2_dir = _motor_from_buttons(up, down)
-
-    payload[0] = _u8(m1_pwm)
-    payload[1] = _u8(m1_dir)
-    payload[2] = _u8(m2_pwm)
-    payload[3] = _u8(m2_dir)
-
-    # UART経由のサーボ制御は使わない
-    payload[4] = 0
-    payload[5] = 0
-
-    return payload
 
 
 def move_servo(servo: AngularServo, angle: float) -> bool:
@@ -377,9 +351,7 @@ def run_zoukin_souten(poll_interval: float = 0.02):
                 payload = STOP_PAYLOAD
             else:
                 # 通常時は十字キーでモーターを操作する。
-                payload = _build_payload_from_controller(vals)
 
-            last_circle_pressed = circle_pressed
 
             if payload != last_sent:
                 print("[UART SEND] payload:", payload)
