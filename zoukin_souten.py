@@ -26,6 +26,7 @@ from lib.afs_uart import afs_send
 from lib import controller_state
 from gpiozero import AngularServo
 import RPi.GPIO as GPIO
+import syoukou
 
 
 
@@ -33,7 +34,7 @@ import RPi.GPIO as GPIO
 UART_DEVICE = os.environ.get("ZOUKIN_SOUTEN_UART_DEVICE", "/dev/ttyAMA1")
 
 MOTOR_SPEED = 150
-STOP_PAYLOAD = [0, 0, 0, 0, 0, 0, 0, 0]
+STOP_PAYLOAD = [0, 0, 0, 0, syoukou.PWM_LIST[0], syoukou.PWM_LIST[1], syoukou.PWM_LIST[2], syoukou.PWM_LIST[3]]  # モーター停止命令
 
 # ===== サーボ設定：ここだけ変更すれば調整できます =====
 # BCM番号（物理ピン番号ではありません）
@@ -249,14 +250,14 @@ def run_auto_test(servo1, servo2, poll_interval: float, retry_count: int = 0) ->
         # 両方HIGHなら右側リミットをいったん離して再接触させ、最初からやり直す。
         if GPIO.input(LIMIT1_PIN) == GPIO.HIGH and GPIO.input(LIMIT2_PIN) == GPIO.HIGH:
             print("[状態] 両方のリミットスイッチがHIGH。右方向へ移動して再判定します")
-            if not move_until_limit([MOTOR_SPEED, 0, 0, 0, 0, 0, 1, 1], LIMIT1_PIN, poll_interval):
+            if not move_until_limit([MOTOR_SPEED, 0, 0, 0, syoukou.PWM_LIST[0], syoukou.PWM_LIST[1], syoukou.PWM_LIST[2], syoukou.PWM_LIST[3]], LIMIT1_PIN, poll_interval):
                 return
 
         if GPIO.input(LIMIT1_PIN) == GPIO.LOW:  # もし右側のリミットスイッチにモーターが触れていたなら
             print("[状態] 右側リミット位置として処理を開始")
 
             # 雑巾保管場所を上げる
-            if not move_until_limit([0, 0, 0, MOTOR_SPEED, 0, 0, 1, 1], LIMIT3_PIN, poll_interval):
+            if not move_until_limit([0, 0, 0, MOTOR_SPEED, syoukou.PWM_LIST[0], syoukou.PWM_LIST[1], syoukou.PWM_LIST[2], syoukou.PWM_LIST[3]], LIMIT3_PIN, poll_interval):
                 return
 
             # サーボを閉じる
@@ -265,10 +266,10 @@ def run_auto_test(servo1, servo2, poll_interval: float, retry_count: int = 0) ->
             time.sleep(0.5)
 
             # 雑巾保管場所を下げる(下げる時間はまた後で設定)
-            if not _send_payload_for([0, 0, MOTOR_SPEED, 0, 0, 0, 1, 1], 1, poll_interval):
+            if not _send_payload_for([0, 0, MOTOR_SPEED, 0, syoukou.PWM_LIST[0], syoukou.PWM_LIST[1], syoukou.PWM_LIST[2], syoukou.PWM_LIST[3]], 1, poll_interval):
                 return
             # 装填機構を左にスライド
-            if not move_until_limit([0, MOTOR_SPEED, 0, 0, 0, 0, 1, 1], LIMIT2_PIN, poll_interval):
+            if not move_until_limit([0, MOTOR_SPEED, 0, 0, syoukou.PWM_LIST[0], syoukou.PWM_LIST[1], syoukou.PWM_LIST[2], syoukou.PWM_LIST[3]], LIMIT2_PIN, poll_interval):
                 return  
             time.sleep(0.5) 
             # # サーボを開く
@@ -278,17 +279,17 @@ def run_auto_test(servo1, servo2, poll_interval: float, retry_count: int = 0) ->
         elif GPIO.input(LIMIT2_PIN) == GPIO.LOW:  # もし左側のリミットスイッチにモーターが触れていたなら
             print("[状態] 左側リミット位置として処理を開始")
             # 雑巾保管場所を上げる
-            if not move_until_limit([0, 0, 0, MOTOR_SPEED, 0, 0, 1, 1], LIMIT3_PIN, poll_interval):
+            if not move_until_limit([0, 0, 0, MOTOR_SPEED, syoukou.PWM_LIST[0], syoukou.PWM_LIST[1], syoukou.PWM_LIST[2], syoukou.PWM_LIST[3]], LIMIT3_PIN, poll_interval):
                 return
             # サーボを閉じる
             move_servo(servo1, HIDARI_CLOSED_ANGLE)
             move_servo(servo2, MIGI_CLOSED_ANGLE)
             time.sleep(0.5)  # サーボが閉じるのを待つ
             # 雑巾保管場所を下げる(下げる時間はまた後で設定)
-            if not _send_payload_for([0, 0, MOTOR_SPEED, 0, 0, 0, 1, 1], 1, poll_interval):
+            if not _send_payload_for([0, 0, MOTOR_SPEED, 0, syoukou.PWM_LIST[0], syoukou.PWM_LIST[1], syoukou.PWM_LIST[2], syoukou.PWM_LIST[3]], 1, poll_interval):
                 return
             # 装填機構を横にスライド
-            if not move_until_limit([MOTOR_SPEED, 0, 0, 0, 0, 0, 1, 1], LIMIT1_PIN, poll_interval):
+            if not move_until_limit([MOTOR_SPEED, 0, 0, 0, syoukou.PWM_LIST[0], syoukou.PWM_LIST[1], syoukou.PWM_LIST[2], syoukou.PWM_LIST[3]], LIMIT1_PIN, poll_interval):
                 return
             time.sleep(0.5)  # スライドが完了するのを待つ
         else:
@@ -350,6 +351,7 @@ def run_zoukin_souten(poll_interval: float = 0.02):
                 run_auto_test(servo1, servo2, poll_interval)
                 payload = STOP_PAYLOAD
             else:
+                pass
                 # 通常時は十字キーでモーターを操作する。
 
 
