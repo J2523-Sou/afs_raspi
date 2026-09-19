@@ -351,7 +351,7 @@ def run_zoukin_souten(poll_interval: float = 0.02):
                 run_auto_test(servo1, servo2, poll_interval)
                 payload = STOP_PAYLOAD
             else:
-                pass
+                payload = STOP_PAYLOAD
                 # 通常時は十字キーでモーターを操作する。
 
 
