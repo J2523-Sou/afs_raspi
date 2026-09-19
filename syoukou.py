@@ -3,7 +3,7 @@ import time
 
 from lib import controller_state
 
-NORMAL_SPEED = 30
+NORMAL_SPEED = 200
 POLL_INTERVAL = 0.02
 
 PWM_LIST = [0, 0, 0, 0]  # PWM出力のリスト。4つのモーターに対応する。
@@ -25,6 +25,8 @@ right_pin_b = 3
 left_pin_a = 11
 # 左側はB相が未結線のため、B相用のピン番号は使用しない
 
+LEFT_ENCODER_REVERSED = True  # 左エンコーダは配線の都合上、常に逆向きに回転する
+
 
 def _button_pressed(value, mask):
     return (int(value) & mask) != 0
@@ -40,14 +42,18 @@ class SingleChannelEncoder:
     (上昇中か下降中か)を渡して加算/減算を切り替える。
     """
 
-    def __init__(self, pin_a):
+    def __init__(self, pin_a, reversed_direction: bool = False):
         self.steps = 0
         self._direction = 1  # 1: 上昇方向(+1ずつ加算), -1: 下降方向(-1ずつ加算)
+        # reversed_direction=Trueの場合、物理的な逆回転を吸収するために
+        # 符号を反転させる。以降、呼び出し側は配線の向きを気にせず
+        # set_direction(1)=上昇, set_direction(-1)=下降 とだけ指定すればよい
+        self._sign = -1 if reversed_direction else 1
         self._pin = DigitalInputDevice(pin_a)
         self._pin.when_activated = self._count_pulse
 
     def _count_pulse(self):
-        self.steps += self._direction
+        self.steps += self._direction * self._sign
 
     def set_direction(self, direction: int):
         """direction: 1(上昇) または -1(下降) を指定する"""
@@ -89,7 +95,7 @@ def run_syoukou(poll_interval: float = POLL_INTERVAL):
     global right_encoder, left_encoder
     right_encoder = RotaryEncoder(right_pin_a, right_pin_b, wrap=False, max_steps=0)
     # 左側はB相が未結線のため、A相のみのSingleChannelEncoderを使用する
-    left_encoder = SingleChannelEncoder(left_pin_a)
+    left_encoder = SingleChannelEncoder(left_pin_a, reversed_direction=LEFT_ENCODER_REVERSED)
 
     try:
         global PWM_LIST
@@ -104,23 +110,27 @@ def run_syoukou(poll_interval: float = POLL_INTERVAL):
                 PWM_LIST[:] = [0, 0, 0, 0]
             elif is_up_pressed and TOP_OR_UNDER == 0:
                 # 上昇方向に動くので、左エンコーダのカウント方向を+1に設定
+                # (物理的な逆回転の吸収はSingleChannelEncoder側で処理済み)
                 left_encoder.set_direction(1)
                 # 一度上ボタンが押されたら、ボタンを離しても
                 # 目標位置(ZENTAI_NAGASA - TOL)に届くまで動き続ける仕様
                 while MIGI_ITI < ZENTAI_NAGASA - TOL:
                     ITI_update()
-                    PWM_LIST[:] = [0, NORMAL_SPEED, 0, left_motor_pwm(MIGI_ITI, HIDARI_ITI)]
+                    PWM_LIST = [0, NORMAL_SPEED, 0, left_motor_pwm(MIGI_ITI, HIDARI_ITI)]
+                    print(f"現在の状況:上昇中, 右エンコーダ: {MIGI_ITI}, 左エンコーダ: {HIDARI_ITI}, PWM: {PWM_LIST}")
                     if controller_state.is_emergency_stopped():
                         break  # 緊急停止時は直ちにループを抜ける
                     time.sleep(poll_interval)
 
             elif is_down_pressed and TOP_OR_UNDER == 1:
                 # 下降方向に動くので、左エンコーダのカウント方向を-1に設定
+                # (物理的な逆回転の吸収はSingleChannelEncoder側で処理済み)
                 left_encoder.set_direction(-1)
                 # 上昇時と同様、一度下ボタンが押されたら
                 # 目標位置(TOL)に届くまで動き続ける仕様
                 while MIGI_ITI > TOL:
                     ITI_update()
+                    print(f"現在の状況:下降中, 右エンコーダ: {MIGI_ITI}, 左エンコーダ: {HIDARI_ITI}, PWM: {PWM_LIST}")
                     if controller_state.is_emergency_stopped():
                         break  # 緊急停止時は直ちにループを抜ける
                     time.sleep(poll_interval)
