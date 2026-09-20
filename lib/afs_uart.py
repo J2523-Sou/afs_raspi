@@ -115,6 +115,32 @@ def afs_send(uartNo, data):
     return afs_uart(uartNo, data)
 
 
+def afs_send_tail(uartNo, data):
+    """既存フレームの5〜8バイト目だけを更新して送信する。"""
+    device = _resolve_uart_device(uartNo)
+    tail = list(data)
+    if not 1 <= len(tail) <= 4:
+        raise ValueError("末尾データは1〜4個の値が必要です")
+    for index, value in enumerate(tail, start=4):
+        byte_value = int(value)
+        if byte_value < 0 or byte_value > 255:
+            raise ValueError(f"data[{index - 4}] が 0..255 の範囲外です: {value}")
+
+    device_lock = _get_device_lock(device)
+    with device_lock:
+        with _connections_lock:
+            payload = list(_last_payloads.get(device, [0] * 8))
+            payload[4:4 + len(tail)] = [int(value) for value in tail]
+            _last_payloads[device] = list(payload)
+            ser = _connections.get(device)
+        serial = _load_serial_module()
+        if ser is None or not getattr(ser, "is_open", True):
+            ser = serial.Serial(device, DEFAULT_BAUDRATE, timeout=DEFAULT_TIMEOUT)
+            with _connections_lock:
+                _connections[device] = ser
+        _send_frame(device, ser, bytes([0xAA, *payload]))
+
+
 def afs_uart(uartNo, data):
     device = _resolve_uart_device(uartNo)
     payload = _normalize_payload(data)
