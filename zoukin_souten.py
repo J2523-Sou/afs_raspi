@@ -255,7 +255,6 @@ def run_auto_test(servo1, servo2, poll_interval: float, retry_count: int = 0) ->
 
         if GPIO.input(LIMIT1_PIN) == GPIO.LOW:  # もし右側のリミットスイッチにモーターが触れていたなら
             print("[状態] 右側リミット位置として処理を開始")
-
             # 雑巾保管場所を上げる
             if not move_until_limit([0, 0, 0, MOTOR_SPEED, syoukou.PWM_LIST[0], syoukou.PWM_LIST[1], syoukou.PWM_LIST[2], syoukou.PWM_LIST[3]], LIMIT3_PIN, poll_interval):
                 return
@@ -264,6 +263,7 @@ def run_auto_test(servo1, servo2, poll_interval: float, retry_count: int = 0) ->
             move_servo(servo2, MIGI_CLOSED_ANGLE)
             move_servo(servo1, HIDARI_CLOSED_ANGLE)
             time.sleep(0.5)
+            stop_list_update()
 
             # 雑巾保管場所を下げる(下げる時間はまた後で設定)
             if not _send_payload_for([0, 0, MOTOR_SPEED, 0, syoukou.PWM_LIST[0], syoukou.PWM_LIST[1], syoukou.PWM_LIST[2], syoukou.PWM_LIST[3]], 1, poll_interval):
@@ -296,6 +296,7 @@ def run_auto_test(servo1, servo2, poll_interval: float, retry_count: int = 0) ->
             print("どっちのリミットスイッチにも触れてなくてうぉ。雑巾装填機構がどちら側にあるか確認してください。")
             return
         # サーボを閉じる。モーターは止めたまま0.40秒待つ。
+        stop_list_update()
         move_servo(servo1, HIDARI_CLOSED_ANGLE)
         move_servo(servo2, MIGI_CLOSED_ANGLE)
         _send_payload_for(STOP_PAYLOAD, 0.40, poll_interval)
@@ -303,6 +304,9 @@ def run_auto_test(servo1, servo2, poll_interval: float, retry_count: int = 0) ->
     finally:
         # 終了・非常停止・UARTエラー時のいずれでもモーターを止める。
         _send_stop()
+
+def stop_list_update():
+    STOP_PAYLOAD[:] = [0, 0, 0, 0, syoukou.PWM_LIST[0], syoukou.PWM_LIST[1], syoukou.PWM_LIST[2], syoukou.PWM_LIST[3]]  # モーター停止命令
 
 
 def run_zoukin_souten(poll_interval: float = 0.02):
@@ -349,8 +353,10 @@ def run_zoukin_souten(poll_interval: float = 0.02):
             if circle_pressed and not last_circle_pressed:
                 print("[AUTO TEST] start")
                 run_auto_test(servo1, servo2, poll_interval)
+                stop_list_update()
                 payload = STOP_PAYLOAD
             else:
+                stop_list_update()
                 payload = STOP_PAYLOAD
                 # 通常時は十字キーでモーターを操作する。
 
