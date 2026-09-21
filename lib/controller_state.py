@@ -9,9 +9,12 @@ _emergency_stop = False
 
 # この時間を超えてコントローラー入力が更新されなければ無効とみなす。
 DEFAULT_MAX_AGE = 0.5
-TRIGGER_BYTE_INDEX = 0
-L2_MASK = 0x20
-R2_MASK = 0x40
+TRIGGER_BYTE_INDEX = 2
+L2_MASK = 0x02
+R2_MASK = 0x04
+LEGACY_TRIGGER_BYTE_INDEX = 0
+LEGACY_L2_MASK = 0x20
+LEGACY_R2_MASK = 0x40
 
 
 def set_values(values):
@@ -45,7 +48,16 @@ def get_trigger_states(values=None):
         return False, False
 
     button_byte = int(values[TRIGGER_BYTE_INDEX])
-    return bool(button_byte & L2_MASK), bool(button_byte & R2_MASK)
+    l2_pressed = bool(button_byte & L2_MASK)
+    r2_pressed = bool(button_byte & R2_MASK)
+
+    # 旧送信プログラムはL2/R2をdata1に入れていたため、互換性を保つ。
+    if not (l2_pressed or r2_pressed):
+        legacy_byte = int(values[LEGACY_TRIGGER_BYTE_INDEX])
+        l2_pressed = bool(legacy_byte & LEGACY_L2_MASK)
+        r2_pressed = bool(legacy_byte & LEGACY_R2_MASK)
+
+    return l2_pressed, r2_pressed
 
 
 def is_l2_pressed(values=None):
