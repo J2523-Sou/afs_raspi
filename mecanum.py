@@ -145,12 +145,12 @@ def run_mecanum(
                     move_speed=move_speed,
                     rotate_speed=rotate_speed,
                 )
-                # 移動速度と旋回速度は compute_wheel_speeds() で別々に反映する
-                payload = speeds_to_pwm_payload(fl, fr, rl, rr, max_speed=1.0)
+                # 速度係数を掛けた後の小さな値を消さないよう、PWM変換時のデッドゾーンは使わない
+                payload = speeds_to_pwm_payload(fl, fr, rl, rr, dead=0.0)
 
-                # 全輪の絶対値がデッドゾーン未満ならペイロードを全ゼロにする
+                # 停止判定は速度係数を掛ける前のスティック入力で行う
                 dead = 0.12
-                if max(abs(fl), abs(fr), abs(rl), abs(rr)) < dead:
+                if max(abs(cur_lx), abs(cur_ly), abs(cur_rx)) < dead:
                     payload = [0] * 8
 
                 # 4. 前回の送信データと変化があれば（または停止指示なら）UART送信
