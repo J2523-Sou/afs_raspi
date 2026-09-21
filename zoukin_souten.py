@@ -27,6 +27,7 @@ from lib import controller_state
 from gpiozero import AngularServo
 import RPi.GPIO as GPIO
 import syoukou
+import rerere
 
 
 
@@ -356,10 +357,10 @@ def run_zoukin_souten(poll_interval: float = 0.02):
                 stop_list_update()
                 payload = STOP_PAYLOAD
             else:
-                stop_list_update()
                 payload = STOP_PAYLOAD
-                # 通常時は十字キーでモーターを操作する。
-
+                if rerere.RERERE_MODE == False:
+                    stop_list_update()
+                    # 通常時は十字キーでモーターを操作する。
 
             if payload != last_sent:
                 print("[UART SEND] payload:", payload)
