@@ -194,6 +194,6 @@ def run_mecanum(
 
 if __name__ == "__main__":
     # ここで最大スピードを調整できます（0.0〜1.0）
-    MOVE_SPEED = 0.1
+    MOVE_SPEED = 1
     ROTATE_SPEED = 0.1
     run_mecanum(move_speed=MOVE_SPEED, rotate_speed=ROTATE_SPEED)
