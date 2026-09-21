@@ -64,6 +64,34 @@ def speeds_to_pwm_payload(fl: float, fr: float, rl: float, rr: float, dead: floa
     rr_f, rr_r = _speed_to_pwm_pair(rr, dead, max_speed)
     return [fl_f, fl_r, fr_f, fr_r, rl_f, rl_r, rr_f, rr_r]
 
+def zidou_mecanum(muki, speed, time):
+    '''rerere.pyで使うコントローラーの命令無しで秒数指定で動くようにするやつ'''
+    if muki == '前':
+        fl, fr, rl, rr = compute_wheel_speeds(0, speed, 0)
+    elif muki == '後':
+        fl, fr, rl, rr = compute_wheel_speeds(0, -speed, 0)
+    elif muki == '右':
+        fl, fr, rl, rr = compute_wheel_speeds(speed, 0, 0)
+    elif muki == '左':
+        fl, fr, rl, rr = compute_wheel_speeds(-speed, 0, 0)
+    elif muki == '右回転':
+        fl, fr, rl, rr = compute_wheel_speeds(0, 0, speed)
+    elif muki == '左回転':
+        fl, fr, rl, rr = compute_wheel_speeds(0, 0, -speed)
+    else:
+        print("無効な方向です。")
+        return
+
+    # 8バイトのPWMペイロードを生成
+    payload = speeds_to_pwm_payload(fl, fr, rl, rr)
+    afs_send(payload)
+
+    # 指定された時間だけ待機
+    time.sleep(time)
+
+    # 停止
+    afs_send([0, 0, 0, 0, 0, 0, 0, 0])
+
 
 def run_mecanum(poll_interval: float = 0.02, max_speed: float = 1.0):
     """`controller_state.get_values()` をポーリングしてメカナムモーター PWM ペイロードを送信する。

@@ -100,6 +100,31 @@ def _fire_and_return(cylinder: int, poll_interval: float) -> bool:
         print("[UART SEND] both OFF:", STOP_PAYLOAD, flush=True)
 
 
+def _handle_cylinder_firing(
+    l1_pressed: bool,
+    r1_pressed: bool,
+    last_l1_pressed: bool,
+    last_r1_pressed: bool,
+    poll_interval: float,
+) -> Tuple[bool, bool]:
+    """
+    ボタンの押下状態と発射許可を判定し、必要に応じてシリンダーを発射する。
+    次回の判定のために更新された (last_l1_pressed, last_r1_pressed) を返す。
+    """
+    left_permission, right_permission = _get_fire_permissions()
+
+    fire1 = left_permission and l1_pressed and not last_l1_pressed
+    fire2 = right_permission and r1_pressed and not last_r1_pressed
+
+    # 過去の割り当て: L1で1・2、R1で3・4。同時押しは順番に実行。
+    for cylinder, requested in ((1, fire1), (2, fire2)):
+        if requested and not _fire_and_return(cylinder, poll_interval):
+            break
+
+    # 今回のボタン状態を次回の判定(エッジ検出)に使うために返す
+    return l1_pressed, r1_pressed
+
+
 def run_air_cylinder(poll_interval: float = 0.02):
     print("[UART INIT] Air cylinder uses", UART_DEVICE)
     print(
@@ -125,19 +150,17 @@ def run_air_cylinder(poll_interval: float = 0.02):
 
             states = _get_cylinder_states(values)
             r1_pressed, l1_pressed = states if states is not None else (False, False)
-            left_permission, right_permission = _get_fire_permissions()
 
-            fire1 = left_permission and l1_pressed and not last_l1_pressed
-            fire2 = right_permission and r1_pressed and not last_r1_pressed
-            last_r1_pressed = r1_pressed
-            last_l1_pressed = l1_pressed
-
-            payload = STOP_PAYLOAD
             try:
-                # 過去の割り当て: L1で1・2、R1で3・4。同時押しは順番に実行。
-                for cylinder, requested in ((1, fire1), (2, fire2)):
-                    if requested and not _fire_and_return(cylinder, poll_interval):
-                        break
+                # 発射処理を関数に切り出し、次回用のボタン状態を更新
+                last_l1_pressed, last_r1_pressed = _handle_cylinder_firing(
+                    l1_pressed, r1_pressed,
+                    last_l1_pressed, last_r1_pressed,
+                    poll_interval
+                )
+
+                payload = STOP_PAYLOAD
+                
                 # 受信基板がいつ起動しても現在状態を受け取れるよう、
                 # zoukin_souten.py と同じく毎ループUART送信する。
                 afs_send(UART_DEVICE, payload)
