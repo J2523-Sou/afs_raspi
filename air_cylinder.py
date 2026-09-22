@@ -1,9 +1,8 @@
-# エアシリンダー
-
 from __future__ import annotations
 
 import os
 import time
+import threading
 from typing import List, Optional, Tuple
 
 from lib.afs_uart import afs_send
@@ -35,6 +34,11 @@ SEND_LOG_INTERVAL = 1.0
 FIRE_TIME = 0.5
 RETURN_TIME = 0.5
 STOP_PAYLOAD = [0] * 8
+
+# === 追加: UARTの競合を防ぐためのロックと、自動発射の状態保持 ===
+_fire_lock = threading.Lock()
+_last_auto_left = False
+_last_auto_right = False
 
 
 def _get_cylinder_states(values=None) -> Optional[Tuple[bool, bool]]:
@@ -86,18 +90,68 @@ def _send_for(payload: List[int], seconds: float, poll_interval: float) -> bool:
 
 def _fire_and_return(cylinder: int, poll_interval: float) -> bool:
     """履歴の順序どおり、発射→戻し→両方OFFを1回実行する。"""
-    try:
-        for returning, seconds in ((False, FIRE_TIME), (True, RETURN_TIME)):
-            payload = _build_action_payload(cylinder, returning)
-            print("[CYLINDER %d] %s %.2fs payload=%s" % (
-                cylinder, "RETURN" if returning else "FIRE", seconds, payload,
-            ), flush=True)
-            if not _send_for(payload, seconds, poll_interval):
+    # 追加: 発射シーケンス中はロックをかけて他のスレッドからのSTOP送信をブロックする
+    with _fire_lock:
+        try:
+            for returning, seconds in ((False, FIRE_TIME), (True, RETURN_TIME)):
+                payload = _build_action_payload(cylinder, returning)
+                print("[CYLINDER %d] %s %.2fs payload=%s" % (
+                    cylinder, "RETURN" if returning else "FIRE", seconds, payload,
+                ), flush=True)
+                if not _send_for(payload, seconds, poll_interval):
+                    return False
+            return True
+        finally:
+            afs_send(UART_DEVICE, STOP_PAYLOAD)
+            print("[UART SEND] both OFF:", STOP_PAYLOAD, flush=True)
+
+
+def _handle_cylinder_firing(
+    l1_pressed: bool,
+    r1_pressed: bool,
+    last_l1_pressed: bool,
+    last_r1_pressed: bool,
+    poll_interval: float,
+) -> Tuple[bool, bool]:
+    """
+    ボタンの押下状態と発射許可を判定し、必要に応じてシリンダーを発射する。
+    次回の判定のために更新された (last_l1_pressed, last_r1_pressed) を返す。
+    """
+    left_permission, right_permission = _get_fire_permissions()
+
+    fire1 = left_permission and l1_pressed and not last_l1_pressed
+    fire2 = right_permission and r1_pressed and not last_r1_pressed
+
+    # 過去の割り当て: L1で1・2、R1で3・4。同時押しは順番に実行。
+    for cylinder, requested in ((1, fire1), (2, fire2)):
+        if requested and not _fire_and_return(cylinder, poll_interval):
+            break
+
+    # 今回のボタン状態を次回の判定(エッジ検出)に使うために返す
+    return l1_pressed, r1_pressed
+
+
+def zioud_sylinder_fire(poll_interval: float = 0.02) -> bool:
+    '''コントローラーの値に左右されず発射できる方のシリンダーを発射する'''
+    global _last_auto_left, _last_auto_right
+    left_permission, right_permission = _get_fire_permissions()
+
+    # 追加: 許可が「FalseからTrueに変わった瞬間」だけを発射対象にする（エッジ検出）
+    fire_left = left_permission and not _last_auto_left
+    fire_right = right_permission and not _last_auto_right
+
+    _last_auto_left = left_permission
+    _last_auto_right = right_permission
+
+    # 左側(Cylinder 1)、右側(Cylinder 2)の順に許可を確認し、許可があれば発射
+    for cylinder, permitted in ((1, fire_left), (2, fire_right)):
+        if permitted:
+            print(f"[AUTO FIRE] Cylinder {cylinder} is permitted. Firing...", flush=True)
+            if not _fire_and_return(cylinder, poll_interval):
+                # 非常停止などで中断された場合はFalseを返して終了
                 return False
-        return True
-    finally:
-        afs_send(UART_DEVICE, STOP_PAYLOAD)
-        print("[UART SEND] both OFF:", STOP_PAYLOAD, flush=True)
+                
+    return True
 
 
 def run_air_cylinder(poll_interval: float = 0.02):
@@ -125,30 +179,33 @@ def run_air_cylinder(poll_interval: float = 0.02):
 
             states = _get_cylinder_states(values)
             r1_pressed, l1_pressed = states if states is not None else (False, False)
-            left_permission, right_permission = _get_fire_permissions()
 
-            fire1 = left_permission and l1_pressed and not last_l1_pressed
-            fire2 = right_permission and r1_pressed and not last_r1_pressed
-            last_r1_pressed = r1_pressed
-            last_l1_pressed = l1_pressed
-
-            payload = STOP_PAYLOAD
             try:
-                # 過去の割り当て: L1で1・2、R1で3・4。同時押しは順番に実行。
-                for cylinder, requested in ((1, fire1), (2, fire2)):
-                    if requested and not _fire_and_return(cylinder, poll_interval):
-                        break
-                # 受信基板がいつ起動しても現在状態を受け取れるよう、
-                # zoukin_souten.py と同じく毎ループUART送信する。
-                afs_send(UART_DEVICE, payload)
-                sent_frames += 1
-                now = time.monotonic()
-                if (payload != last_logged_payload or last_send_log_at is None
-                        or now - last_send_log_at >= SEND_LOG_INTERVAL):
-                    print("[UART SEND] device=%s idle_frames=%d payload=%s"
-                          % (UART_DEVICE, sent_frames, payload), flush=True)
-                    last_logged_payload = list(payload)
-                    last_send_log_at = now
+                # 発射処理を関数に切り出し、次回用のボタン状態を更新
+                last_l1_pressed, last_r1_pressed = _handle_cylinder_firing(
+                    l1_pressed, r1_pressed,
+                    last_l1_pressed, last_r1_pressed,
+                    poll_interval
+                )
+
+                payload = STOP_PAYLOAD
+                
+                # 受信基板がいつ起動しても現在状態を受け取れるよう、毎ループUART送信する。
+                # 【追加】他のスレッド（自動発射など）がUART送信中（発射中）でない場合のみSTOPを送信する
+                if _fire_lock.acquire(blocking=False):
+                    try:
+                        afs_send(UART_DEVICE, payload)
+                        sent_frames += 1
+                        now = time.monotonic()
+                        if (payload != last_logged_payload or last_send_log_at is None
+                                or now - last_send_log_at >= SEND_LOG_INTERVAL):
+                            print("[UART SEND] device=%s idle_frames=%d payload=%s"
+                                  % (UART_DEVICE, sent_frames, payload), flush=True)
+                            last_logged_payload = list(payload)
+                            last_send_log_at = now
+                    finally:
+                        _fire_lock.release()
+
             except Exception as exc:
                 print("[UART SEND] failed ->", UART_DEVICE, repr(exc), flush=True)
                 time.sleep(ERROR_RETRY_INTERVAL)
