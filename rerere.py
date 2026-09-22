@@ -105,6 +105,7 @@ def update_controller_state():
             reset_rerere_state()
         else:
             print("レレレうちモードを終了します。動作をリセット・停止します。")
+            current_direction = "left"  # 次回の動作を左に設定
             stop_all_motors()  # モードオフ時に確実にモーターを止める
 
     previous_button_state = current_button_state
