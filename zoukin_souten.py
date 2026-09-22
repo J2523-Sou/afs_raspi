@@ -163,6 +163,22 @@ def _send_payload_for(payload: List[int], seconds: float, poll_interval: float) 
     print("[動作完了] 指定時間モーター動作")
     return True
 
+def rack_idou(poll_interval):
+    '''移動できる方にラックを強制的に移動させる'''
+    if GPIO.input(LIMIT1_PIN) == GPIO.HIGH:
+        print("[状態] 右側リミットへ移動します")
+        if not move_until_limit([MOTOR_SPEED, 0, 0, 0, syoukou.PWM_LIST[0], syoukou.PWM_LIST[1], syoukou.PWM_LIST[2], syoukou.PWM_LIST[3]], LIMIT1_PIN, poll_interval):
+            return
+    elif GPIO.input(LIMIT2_PIN) == GPIO.HIGH:
+        print("[状態] 左側リミットへ移動します")
+        if not move_until_limit([0, MOTOR_SPEED, 0, 0, syoukou.PWM_LIST[0], syoukou.PWM_LIST[1], syoukou.PWM_LIST[2], syoukou.PWM_LIST[3]], LIMIT2_PIN, poll_interval):
+            return
+
+def servo_open(servo1, servo2):
+    '''サーボを開く'''
+    move_servo(servo1, HIDARI_OPEN_ANGLE)
+    move_servo(servo2, MIGI_OPEN_ANGLE)
+
 
 def run_souten_direction(servo1, servo2, direction: str, poll_interval: float) -> None:
     """指定された方向（左または右）に確実に装填を行うための関数"""
@@ -238,6 +254,7 @@ def run_souten_direction(servo1, servo2, direction: str, poll_interval: float) -
 
     finally:
         _send_stop()
+
 
 
 def run_auto_test(servo1, servo2, poll_interval: float, retry_count: int = 0) -> None:
@@ -323,6 +340,7 @@ def run_zoukin_souten(poll_interval: float = 0.02):
             fire_cylinder_check()
             vals = _get_values()
             circle_pressed = _circle_pressed(vals)
+            controller_atai = controller_state.get_values()
 
             if circle_pressed and not last_circle_pressed: 
                 print("[AUTO TEST] start")
@@ -345,7 +363,16 @@ def run_zoukin_souten(poll_interval: float = 0.02):
                 payload = STOP_PAYLOAD
                 time.sleep(0.2)
             # ==================================================
-            
+            elif vals and len(vals) > 0 and vals[0] == 8:
+                rack_idou(poll_interval)
+                stop_list_update()
+                payload = STOP_PAYLOAD
+                time.sleep(0.2)
+            elif vals and len(vals) > 0 and vals[0] == 1:
+                servo_open(servo1, servo2)
+                stop_list_update()
+                payload = STOP_PAYLOAD
+                time.sleep(0.2)
             else:
                 payload = STOP_PAYLOAD
                 if rerere.RERERE_MODE == False:
