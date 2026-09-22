@@ -12,7 +12,7 @@ from zoukin_souten import run_zoukin_souten
 from debug_server import Handler as DebugHandler
 
 MOVE_SPEED = 0.4
-ROTATE_SPEED = 0.4
+ROTATE_SPEED = 0.2
 
 
 def main():
