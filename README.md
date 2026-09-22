@@ -110,6 +110,8 @@ deactivate
 | 十字キー ← / → | `vals[1]` bit5 / bit6 | 装填モーター2の正転 / 逆転 |
 | ○ | `vals[0]` bit1 | サーボ位置A / Bの切り替え |
 | Options | `vals[0]` bit4 | 非常停止ロックのON / OFF |
+| L2 | `vals[0]` bit5 | `controller_state.is_l2_pressed()` で押下判定 |
+| R2 | `vals[0]` bit6 | `controller_state.is_r2_pressed()` で押下判定 |
 | L1 | `vals[1]` bit1 | エアシリンダー2のCH3 / CH4切り替え |
 | R1 | `vals[1]` bit2 | エアシリンダー1のCH1 / CH2切り替え |
 | × / □ / △ | `vals[0]` bit0 / bit2 / bit3 | 受信・デバッグ画面表示のみ。機構操作には未使用 |

@@ -10,6 +10,7 @@ from mecanum import run_mecanum
 from syoukou import run_syoukou
 from zoukin_souten import run_zoukin_souten
 from debug_server import Handler as DebugHandler
+from rerere import run_rerere
 
 MOVE_SPEED = 0.4
 ROTATE_SPEED = 0.2
@@ -25,6 +26,7 @@ def main():
     )
     syoukou = threading.Thread(target=run_syoukou, daemon=True)
     zoukin_souten = threading.Thread(target=run_zoukin_souten, daemon=True)
+    rerere = threading.Thread(target=run_rerere, daemon=True)
     debug_server = threading.Thread(
         target=ThreadingHTTPServer(("0.0.0.0", 8080), DebugHandler).serve_forever,
         daemon=True,
@@ -36,6 +38,8 @@ def main():
     syoukou.start()
     zoukin_souten.start()
     debug_server.start()
+    rerere.start()
+
     print("Debug dashboard: http://0.0.0.0:8080")
 
     try:
