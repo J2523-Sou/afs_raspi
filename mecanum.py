@@ -65,7 +65,7 @@ def speeds_to_pwm_payload(fl: float, fr: float, rl: float, rr: float, dead: floa
     rr_f, rr_r = _speed_to_pwm_pair(rr, dead, max_speed)
     return [fl_f, fl_r, fr_f, fr_r, rl_f, rl_r, rr_f, rr_r]
 
-def zidou_mecanum(muki, speed, duration, max_speed=0.1):
+def zidou_mecanum(muki, speed, duration, max_speed=0.2):
     '''rerere.pyで使うコントローラーの命令無しで秒数指定で動くようにするやつ。
     コントローラー入力時と同様に、滑らかな加減速を行います。'''
     
