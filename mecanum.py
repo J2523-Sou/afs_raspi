@@ -28,9 +28,20 @@ def apply_input_deadzone(value: float, deadzone: float = INPUT_DEADZONE) -> floa
     return 0.0 if abs(value) < deadzone else value
 
 
-def compute_wheel_speeds(lx: float, ly: float, rx: float) -> Tuple[float, float, float, float]:
+def compute_wheel_speeds(
+    lx: float,
+    ly: float,
+    rx: float,
+    move_speed: float = 1.0,
+    rotate_speed: float = 1.0,
+) -> Tuple[float, float, float, float]:
     """旧後方から見た左側を前として、元の配線順 (fl, fr, rl, rr) へ変換する。"""
     # 新しい前進は旧左方向、新しい右移動は旧前方向。旋回は変更しない。
+    move_speed = max(0.0, min(1.0, move_speed))
+    rotate_speed = max(0.0, min(1.0, rotate_speed))
+    lx *= move_speed
+    ly *= move_speed
+    rx *= rotate_speed
     lx, ly = -ly, lx
     fl = ly + lx + rx
     fr = ly - lx - rx
@@ -65,10 +76,14 @@ def speeds_to_pwm_payload(fl: float, fr: float, rl: float, rr: float, dead: floa
     return [fl_f, fl_r, fr_f, fr_r, rl_f, rl_r, rr_f, rr_r]
 
 
-def run_mecanum(poll_interval: float = 0.02, max_speed: float = 1.0):
+def run_mecanum(
+    poll_interval: float = 0.02,
+    move_speed: float = 1.0,
+    rotate_speed: float = 1.0,
+):
     """`controller_state.get_values()` をポーリングしてメカナムモーター PWM ペイロードを送信する。
 
-    max_speed : 0.0〜1.0 の範囲で最大スピード（最大PWM出力）を固定する係数。
+    move_speed / rotate_speed : 0.0〜1.0 の範囲で移動・旋回の最大速度を指定する係数。
                 例えば 0.5 にすると、フルスティック入力でもPWMは最大約127までしか出ない。
     """
 
@@ -86,7 +101,8 @@ def run_mecanum(poll_interval: float = 0.02, max_speed: float = 1.0):
     RESPONSE_SPEED = 0.25
 
     # 最大スピード（最大PWM出力）の上限。0.0〜1.0の範囲でクリップしておく
-    max_speed = max(0.0, min(1.0, max_speed))
+    move_speed = max(0.0, min(1.0, move_speed))
+    rotate_speed = max(0.0, min(1.0, rotate_speed))
 
     last_sent = None
 
@@ -122,13 +138,19 @@ def run_mecanum(poll_interval: float = 0.02, max_speed: float = 1.0):
                 cur_ry += (tgt_ry - cur_ry) * RESPONSE_SPEED
 
                 # 3. 滑らかに変化する「現在値」を使って4輪の速度を計算
-                fl, fr, rl, rr = compute_wheel_speeds(cur_lx, cur_ly, cur_rx)
-                # max_speed で最大PWM出力を固定する
-                payload = speeds_to_pwm_payload(fl, fr, rl, rr, max_speed=max_speed)
+                fl, fr, rl, rr = compute_wheel_speeds(
+                    cur_lx,
+                    cur_ly,
+                    cur_rx,
+                    move_speed=move_speed,
+                    rotate_speed=rotate_speed,
+                )
+                # 速度係数を掛けた後の小さな値を消さないよう、PWM変換時のデッドゾーンは使わない
+                payload = speeds_to_pwm_payload(fl, fr, rl, rr, dead=0.0)
 
-                # 全輪の絶対値がデッドゾーン未満ならペイロードを全ゼロにする
+                # 停止判定は速度係数を掛ける前のスティック入力で行う
                 dead = 0.12
-                if max(abs(fl), abs(fr), abs(rl), abs(rr)) < dead:
+                if max(abs(cur_lx), abs(cur_ly), abs(cur_rx)) < dead:
                     payload = [0] * 8
 
                 # 4. 前回の送信データと変化があれば（または停止指示なら）UART送信
@@ -137,7 +159,8 @@ def run_mecanum(poll_interval: float = 0.02, max_speed: float = 1.0):
                         print("[UART SEND] sending all zeros to stop motors")
                     else:
                         print("[AXIS] cur_lx=%.3f cur_ly=%.3f cur_rx=%.3f" % (cur_lx, cur_ly, cur_rx))
-                        print("[MOTORS] fl=%.3f fr=%.3f rl=%.3f rr=%.3f (max_speed=%.2f)" % (fl, fr, rl, rr, max_speed))
+                        print("[MOTORS] fl=%.3f fr=%.3f rl=%.3f rr=%.3f (move=%.2f rotate=%.2f)" % (
+                            fl, fr, rl, rr, move_speed, rotate_speed))
                         print("[UART SEND] mecanum payload:", payload)
 
                     try:
@@ -171,5 +194,6 @@ def run_mecanum(poll_interval: float = 0.02, max_speed: float = 1.0):
 
 if __name__ == "__main__":
     # ここで最大スピードを調整できます（0.0〜1.0）
-    MAX_SPEED = 0.1
-    run_mecanum(max_speed=MAX_SPEED)
+    MOVE_SPEED = 1
+    ROTATE_SPEED = 0.1
+    run_mecanum(move_speed=MOVE_SPEED, rotate_speed=ROTATE_SPEED)

@@ -11,13 +11,18 @@ from syoukou import run_syoukou
 from zoukin_souten import run_zoukin_souten
 from debug_server import Handler as DebugHandler
 
-MAX_SPEED = 0.4
+MOVE_SPEED = 0.4
+ROTATE_SPEED = 0.2
 
 
 def main():
     controller_receiver = threading.Thread(target=run_receiver, daemon=True)
     air_cylinder = threading.Thread(target=run_air_cylinder, daemon=True)
-    mecanum = threading.Thread(target=run_mecanum, kwargs={"max_speed": MAX_SPEED}, daemon=True)
+    mecanum = threading.Thread(
+        target=run_mecanum,
+        kwargs={"move_speed": MOVE_SPEED, "rotate_speed": ROTATE_SPEED},
+        daemon=True,
+    )
     syoukou = threading.Thread(target=run_syoukou, daemon=True)
     zoukin_souten = threading.Thread(target=run_zoukin_souten, daemon=True)
     debug_server = threading.Thread(
