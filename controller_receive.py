@@ -21,8 +21,7 @@ if lgpio is not None:
 
 HOST = "0.0.0.0"
 PORT = 5001
-OPTION_BYTE_INDEX = 0
-OPTION_MASK = 0x40  # data1 bit6
+OPTION_MASK = 0x10  # vals[0] bit4
 
 
 def _set_led(value):
@@ -45,7 +44,6 @@ def _recv_exact(conn, size):
 
 def run_receiver():
     last_option_pressed = False
-    last_trigger_states = (False, False)
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
         server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         server.bind((HOST, PORT))
@@ -70,29 +68,11 @@ def run_receiver():
                         receive = _recv_exact(conn, 7)
                         if receive is None:
                             break
-                        
-                        # === 変更: 受信した値を0b + 8桁の2進数表記でプリント ===
-                        bin_str = " ".join([f"0b{b:08b}" for b in receive])
-                        print(f"Received: [ {bin_str} ]")
-                        # =====================================================
-
-                        option_pressed = bool(
-                            receive[OPTION_BYTE_INDEX] & OPTION_MASK
-                        )
+                        option_pressed = bool(receive[0] & OPTION_MASK)
                         if option_pressed and not last_option_pressed:
                             locked = controller_state.toggle_emergency_stop()
                             print("Emergency stop lock:", "ON" if locked else "OFF")
                         last_option_pressed = option_pressed
-                        
-                        trigger_states = controller_state.get_trigger_states(receive)
-                        if trigger_states != last_trigger_states:
-                            print(
-                                "L2:", trigger_states[0],
-                                "R2:", trigger_states[1],
-                                "data1:", f"0x{receive[0]:02X}",
-                                "data3:", f"0x{receive[2]:02X}"
-                            )
-                            last_trigger_states = trigger_states
                         controller_state.set_values(receive)
             except OSError as e:
                 print("Controller connection error:", e)
@@ -100,7 +80,6 @@ def run_receiver():
                 # 切断直後から古い操作値を使わせない。
                 controller_state.clear_values()
                 last_option_pressed = False
-                last_trigger_states = (False, False)
                 _set_led(0)
                 print("Controller disconnected")
 

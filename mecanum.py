@@ -6,6 +6,7 @@ import time
 
 from lib.afs_uart import afs_send
 from lib import controller_state
+import time
 
 
 INPUT_DEADZONE = 0.08
@@ -64,33 +65,82 @@ def speeds_to_pwm_payload(fl: float, fr: float, rl: float, rr: float, dead: floa
     rr_f, rr_r = _speed_to_pwm_pair(rr, dead, max_speed)
     return [fl_f, fl_r, fr_f, fr_r, rl_f, rl_r, rr_f, rr_r]
 
-def zidou_mecanum(muki, speed, time):
-    '''rerere.pyで使うコントローラーの命令無しで秒数指定で動くようにするやつ'''
+def zidou_mecanum(muki, speed, duration, max_speed=0.1):
+    '''rerere.pyで使うコントローラーの命令無しで秒数指定で動くようにするやつ。
+    コントローラー入力時と同様に、滑らかな加減速を行います。'''
+    
+    # 1. 仮想のスティック目標値（Target）を設定
+    tgt_lx, tgt_ly, tgt_rx = 0.0, 0.0, 0.0
+    
     if muki == '前':
-        fl, fr, rl, rr = compute_wheel_speeds(0, speed, 0)
+        tgt_ly = speed
     elif muki == '後':
-        fl, fr, rl, rr = compute_wheel_speeds(0, -speed, 0)
+        tgt_ly = -speed
     elif muki == '右':
-        fl, fr, rl, rr = compute_wheel_speeds(speed, 0, 0)
+        tgt_lx = speed
     elif muki == '左':
-        fl, fr, rl, rr = compute_wheel_speeds(-speed, 0, 0)
+        tgt_lx = -speed
     elif muki == '右回転':
-        fl, fr, rl, rr = compute_wheel_speeds(0, 0, speed)
+        tgt_rx = speed
     elif muki == '左回転':
-        fl, fr, rl, rr = compute_wheel_speeds(0, 0, -speed)
+        tgt_rx = -speed
     else:
         print("無効な方向です。")
         return
 
-    # 8バイトのPWMペイロードを生成
-    payload = speeds_to_pwm_payload(fl, fr, rl, rr)
-    afs_send(payload)
+    # コントローラー処理と同じ加減速の滑らかさ・ループ間隔
+    RESPONSE_SPEED = 0.25
+    poll_interval = 0.02
+    
+    # 現在の仮想スティック値
+    cur_lx, cur_ly, cur_rx = 0.0, 0.0, 0.0
+    last_sent = None
+    start_time = time.time()
 
-    # 指定された時間だけ待機
-    time.sleep(time)
+    # --- 動作フェーズ: 指定された duration の間、滑らかに加速しながら走行 ---
+    while (time.time() - start_time) < duration:
+        # 目標値に向けて、現在値をゆっくり近づける
+        cur_lx += (tgt_lx - cur_lx) * RESPONSE_SPEED
+        cur_ly += (tgt_ly - cur_ly) * RESPONSE_SPEED
+        cur_rx += (tgt_rx - cur_rx) * RESPONSE_SPEED
 
-    # 停止
-    afs_send([0, 0, 0, 0, 0, 0, 0, 0])
+        fl, fr, rl, rr = compute_wheel_speeds(cur_lx, cur_ly, cur_rx)
+        payload = speeds_to_pwm_payload(fl, fr, rl, rr, max_speed=max_speed)
+
+        dead = 0.12
+        if max(abs(fl), abs(fr), abs(rl), abs(rr)) < dead:
+            payload = [0] * 8
+
+        if payload != last_sent:
+            afs_send(0, payload)
+            last_sent = list(payload)
+            
+        time.sleep(poll_interval)
+
+    # --- 停止フェーズ: duration 経過後、目標値を0にして滑らかに減速 ---
+    tgt_lx, tgt_ly, tgt_rx = 0.0, 0.0, 0.0
+    
+    # 完全に停止する（現在値がほぼ0になる）までループ
+    while max(abs(cur_lx), abs(cur_ly), abs(cur_rx)) > 0.01:
+        cur_lx += (tgt_lx - cur_lx) * RESPONSE_SPEED
+        cur_ly += (tgt_ly - cur_ly) * RESPONSE_SPEED
+        cur_rx += (tgt_rx - cur_rx) * RESPONSE_SPEED
+
+        fl, fr, rl, rr = compute_wheel_speeds(cur_lx, cur_ly, cur_rx)
+        payload = speeds_to_pwm_payload(fl, fr, rl, rr, max_speed=max_speed)
+
+        dead = 0.12
+        if max(abs(fl), abs(fr), abs(rl), abs(rr)) < dead:
+            payload = [0] * 8
+
+        if payload != last_sent:
+            afs_send(0, payload)
+            last_sent = list(payload)
+            
+        time.sleep(poll_interval)
+
+    # 完全に停止させる念のための送信
+    afs_send(0, [0, 0, 0, 0, 0, 0, 0, 0])
 
 
 def run_mecanum(poll_interval: float = 0.02, max_speed: float = 1.0):
