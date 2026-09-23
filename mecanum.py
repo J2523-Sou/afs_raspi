@@ -101,18 +101,17 @@ def zidou_mecanum(muki, speed, duration, max_speed=1):
 
     poll_interval = 0.02
     
-    # === 滑り防止のための最重要パラメータ ===
-    # 1回のループ(0.02秒)で変化できる速度の最大値。
-    # この値が小さいほど「じわーっ」と動き出し、滑りにくくなりますが、加速に時間がかかります。
-    # 滑る場合はこの数値を 0.01 など更に小さくし、もたつく場合は 0.03 などに上げてください。
-    ACCEL_STEP = 0.015 
+    # === パラメータ調整箇所 ===
+    ACCEL_STEP = 0.005  # 加速時のステップ（小さくすると発進時に滑りにくくなる）
+    DECEL_STEP = 0.005   # ★減速時のステップ（大きくすると素早く止まるようになります）
+    MIN_OUTPUT_CUTOFF = 0.08 # ★最低速カットオフ値（これ以下の入力値になったら強制的に0にする）
     
     # 現在の仮想スティック値
     cur_lx, cur_ly, cur_rx = 0.0, 0.0, 0.0
     last_sent = None
     start_time = time.time()
 
-    # 目標値へ一定のペースで近づけるためのヘルパー関数
+    # 目標値へ近づけるためのヘルパー関数（加減速それぞれでステップ値を指定可能に）
     def smooth_approach(current, target, step):
         if current < target:
             return min(current + step, target)
@@ -122,17 +121,15 @@ def zidou_mecanum(muki, speed, duration, max_speed=1):
 
     # --- 動作フェーズ: 指定された duration の間、滑らかに加速・走行 ---
     while (time.time() - start_time) < duration:
-        # 目標値に向けて、一定のステップ(ACCEL_STEP)で現在値を近づける（急発進防止）
         cur_lx = smooth_approach(cur_lx, tgt_lx, ACCEL_STEP)
         cur_ly = smooth_approach(cur_ly, tgt_ly, ACCEL_STEP)
         cur_rx = smooth_approach(cur_rx, tgt_rx, ACCEL_STEP)
 
         fl, fr, rl, rr = compute_wheel_speeds(cur_lx, cur_ly, cur_rx)
-        # PWM計算時のデッドゾーンは 0 にし、微小な出力もモーターに伝える
         payload = speeds_to_pwm_payload(fl, fr, rl, rr, max_speed=max_speed, dead=0.0)
 
-        # 最終的な入力値が極端に小さい場合のみ停止信号にする
-        if max(abs(cur_lx), abs(cur_ly), abs(cur_rx)) < 0.05:
+        # 最低出力以下になったら強制ストップ＆変数初期化
+        if max(abs(cur_lx), abs(cur_ly), abs(cur_rx)) < MIN_OUTPUT_CUTOFF:
             payload = [0] * 8
 
         if payload != last_sent:
@@ -144,17 +141,19 @@ def zidou_mecanum(muki, speed, duration, max_speed=1):
     # --- 停止フェーズ: duration 経過後、目標値を0にして滑らかに減速 ---
     tgt_lx, tgt_ly, tgt_rx = 0.0, 0.0, 0.0
     
-    # 完全に停止する（現在値がゼロになる）までループ（急ブレーキ防止）
-    while max(abs(cur_lx), abs(cur_ly), abs(cur_rx)) > 0.001:
-        cur_lx = smooth_approach(cur_lx, tgt_lx, ACCEL_STEP)
-        cur_ly = smooth_approach(cur_ly, tgt_ly, ACCEL_STEP)
-        cur_rx = smooth_approach(cur_rx, tgt_rx, ACCEL_STEP)
+    # 減速処理（DECEL_STEP を使用）
+    while max(abs(cur_lx), abs(cur_ly), abs(cur_rx)) > 0.0:
+        cur_lx = smooth_approach(cur_lx, tgt_lx, DECEL_STEP)
+        cur_ly = smooth_approach(cur_ly, tgt_ly, DECEL_STEP)
+        cur_rx = smooth_approach(cur_rx, tgt_rx, DECEL_STEP)
 
-        fl, fr, rl, rr = compute_wheel_speeds(cur_lx, cur_ly, cur_rx)
-        payload = speeds_to_pwm_payload(fl, fr, rl, rr, max_speed=max_speed, dead=0.0)
-
-        if max(abs(cur_lx), abs(cur_ly), abs(cur_rx)) < 0.05:
+        # ★カットオフ閾値未満になったら変数を直接 0 に落としてループを速やかに抜ける
+        if max(abs(cur_lx), abs(cur_ly), abs(cur_rx)) < MIN_OUTPUT_CUTOFF:
+            cur_lx, cur_ly, cur_rx = 0.0, 0.0, 0.0
             payload = [0] * 8
+        else:
+            fl, fr, rl, rr = compute_wheel_speeds(cur_lx, cur_ly, cur_rx)
+            payload = speeds_to_pwm_payload(fl, fr, rl, rr, max_speed=max_speed, dead=0.0)
 
         if payload != last_sent:
             afs_send(0, payload)
@@ -162,7 +161,7 @@ def zidou_mecanum(muki, speed, duration, max_speed=1):
             
         time.sleep(poll_interval)
 
-    # 完全に停止させる念のための送信
+    # 完全に停止させる送信
     afs_send(0, [0, 0, 0, 0, 0, 0, 0, 0])
 
 def run_mecanum(
