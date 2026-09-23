@@ -76,9 +76,9 @@ def speeds_to_pwm_payload(fl: float, fr: float, rl: float, rr: float, dead: floa
     rr_f, rr_r = _speed_to_pwm_pair(rr, dead, max_speed)
     return [fl_f, fl_r, fr_f, fr_r, rl_f, rl_r, rr_f, rr_r]
 
-def zidou_mecanum(muki, speed, duration, max_speed=0.2):
+def zidou_mecanum(muki, speed, duration, max_speed=1):
     '''rerere.pyで使うコントローラーの命令無しで秒数指定で動くようにするやつ。
-    コントローラー入力時と同様に、滑らかな加減速を行います。'''
+    スリップ（滑り）を最大限防ぐため、一定の加速度で滑らかに加減速を行います。'''
     
     # 1. 仮想のスティック目標値（Target）を設定
     tgt_lx, tgt_ly, tgt_rx = 0.0, 0.0, 0.0
@@ -99,27 +99,40 @@ def zidou_mecanum(muki, speed, duration, max_speed=0.2):
         print("無効な方向です。")
         return
 
-    # コントローラー処理と同じ加減速の滑らかさ・ループ間隔
-    RESPONSE_SPEED = 0.25
     poll_interval = 0.02
+    
+    # === 滑り防止のための最重要パラメータ ===
+    # 1回のループ(0.02秒)で変化できる速度の最大値。
+    # この値が小さいほど「じわーっ」と動き出し、滑りにくくなりますが、加速に時間がかかります。
+    # 滑る場合はこの数値を 0.01 など更に小さくし、もたつく場合は 0.03 などに上げてください。
+    ACCEL_STEP = 0.015 
     
     # 現在の仮想スティック値
     cur_lx, cur_ly, cur_rx = 0.0, 0.0, 0.0
     last_sent = None
     start_time = time.time()
 
-    # --- 動作フェーズ: 指定された duration の間、滑らかに加速しながら走行 ---
+    # 目標値へ一定のペースで近づけるためのヘルパー関数
+    def smooth_approach(current, target, step):
+        if current < target:
+            return min(current + step, target)
+        elif current > target:
+            return max(current - step, target)
+        return target
+
+    # --- 動作フェーズ: 指定された duration の間、滑らかに加速・走行 ---
     while (time.time() - start_time) < duration:
-        # 目標値に向けて、現在値をゆっくり近づける
-        cur_lx += (tgt_lx - cur_lx) * RESPONSE_SPEED
-        cur_ly += (tgt_ly - cur_ly) * RESPONSE_SPEED
-        cur_rx += (tgt_rx - cur_rx) * RESPONSE_SPEED
+        # 目標値に向けて、一定のステップ(ACCEL_STEP)で現在値を近づける（急発進防止）
+        cur_lx = smooth_approach(cur_lx, tgt_lx, ACCEL_STEP)
+        cur_ly = smooth_approach(cur_ly, tgt_ly, ACCEL_STEP)
+        cur_rx = smooth_approach(cur_rx, tgt_rx, ACCEL_STEP)
 
         fl, fr, rl, rr = compute_wheel_speeds(cur_lx, cur_ly, cur_rx)
-        payload = speeds_to_pwm_payload(fl, fr, rl, rr, max_speed=max_speed)
+        # PWM計算時のデッドゾーンは 0 にし、微小な出力もモーターに伝える
+        payload = speeds_to_pwm_payload(fl, fr, rl, rr, max_speed=max_speed, dead=0.0)
 
-        dead = 0.12
-        if max(abs(fl), abs(fr), abs(rl), abs(rr)) < dead:
+        # 最終的な入力値が極端に小さい場合のみ停止信号にする
+        if max(abs(cur_lx), abs(cur_ly), abs(cur_rx)) < 0.05:
             payload = [0] * 8
 
         if payload != last_sent:
@@ -131,17 +144,16 @@ def zidou_mecanum(muki, speed, duration, max_speed=0.2):
     # --- 停止フェーズ: duration 経過後、目標値を0にして滑らかに減速 ---
     tgt_lx, tgt_ly, tgt_rx = 0.0, 0.0, 0.0
     
-    # 完全に停止する（現在値がほぼ0になる）までループ
-    while max(abs(cur_lx), abs(cur_ly), abs(cur_rx)) > 0.01:
-        cur_lx += (tgt_lx - cur_lx) * RESPONSE_SPEED
-        cur_ly += (tgt_ly - cur_ly) * RESPONSE_SPEED
-        cur_rx += (tgt_rx - cur_rx) * RESPONSE_SPEED
+    # 完全に停止する（現在値がゼロになる）までループ（急ブレーキ防止）
+    while max(abs(cur_lx), abs(cur_ly), abs(cur_rx)) > 0.001:
+        cur_lx = smooth_approach(cur_lx, tgt_lx, ACCEL_STEP)
+        cur_ly = smooth_approach(cur_ly, tgt_ly, ACCEL_STEP)
+        cur_rx = smooth_approach(cur_rx, tgt_rx, ACCEL_STEP)
 
         fl, fr, rl, rr = compute_wheel_speeds(cur_lx, cur_ly, cur_rx)
-        payload = speeds_to_pwm_payload(fl, fr, rl, rr, max_speed=max_speed)
+        payload = speeds_to_pwm_payload(fl, fr, rl, rr, max_speed=max_speed, dead=0.0)
 
-        dead = 0.12
-        if max(abs(fl), abs(fr), abs(rl), abs(rr)) < dead:
+        if max(abs(cur_lx), abs(cur_ly), abs(cur_rx)) < 0.05:
             payload = [0] * 8
 
         if payload != last_sent:
@@ -152,7 +164,6 @@ def zidou_mecanum(muki, speed, duration, max_speed=0.2):
 
     # 完全に停止させる念のための送信
     afs_send(0, [0, 0, 0, 0, 0, 0, 0, 0])
-
 
 def run_mecanum(
     poll_interval: float = 0.02,

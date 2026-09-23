@@ -8,7 +8,7 @@ import threading
 import signal
 import sys
 
-idou_kyori = 0.8  # 秒数を指定してください
+idou_kyori = 0.6  # 秒数を指定してください
 MASK = 6
 
 # ===== 暴走禁止（安全装置）関連の設定 =====
