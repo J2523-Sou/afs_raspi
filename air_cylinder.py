@@ -7,6 +7,7 @@ from typing import List, Optional, Tuple
 
 from lib.afs_uart import afs_send
 from lib import controller_state
+import led
 
 
 # ソレノイド基板はGPIO4(TX) / GPIO5(RX)に割り当てたttyAMA2を使用する。
@@ -90,6 +91,8 @@ def _send_for(payload: List[int], seconds: float, poll_interval: float) -> bool:
 
 def _fire_and_return(cylinder: int, poll_interval: float) -> bool:
     """履歴の順序どおり、発射→戻し→両方OFFを1回実行する。"""
+    direction = "hidari" if cylinder == 1 else "migi"
+    led.send_serial_command(direction)
     # 追加: 発射シーケンス中はロックをかけて他のスレッドからのSTOP送信をブロックする
     with _fire_lock:
         try:

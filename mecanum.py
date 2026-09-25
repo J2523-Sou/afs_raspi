@@ -7,6 +7,7 @@ import time
 from lib.afs_uart import afs_send
 from lib import controller_state
 import time
+import led
 
 
 INPUT_DEADZONE = 0.08
@@ -194,6 +195,12 @@ def run_mecanum(
 
     last_sent = None
 
+
+    # ====LEDのシリアル通信のための動作状態の管理====
+    STOP_TIMEOUT = 2.0  # 停止状態が何秒続いたら teisi を送るか（任意に調整してください）
+    last_move_time = time.time()
+    is_moving = False
+
     try:
         while True:
             vals = [] if controller_state.is_emergency_stopped() else controller_state.get_values()
@@ -240,6 +247,19 @@ def run_mecanum(
                 dead = 0.12
                 if max(abs(cur_lx), abs(cur_ly), abs(cur_rx)) < dead:
                     payload = [0] * 8
+
+                is_all_zero = all(p == 0 for p in payload)
+
+                if not is_all_zero:
+                    last_move_time = time.time()
+                    if not is_moving:
+                        is_moving = True
+                        led.send_serial_command("idou")
+
+                    else:
+                        if is_moving and (time.time() - last_move_time) > STOP_TIMEOUT:
+                            is_moving = False
+                            led.send_serial_command("teisi")
 
                 # 4. 前回の送信データと変化があれば（または停止指示なら）UART送信
                 if payload != last_sent:
