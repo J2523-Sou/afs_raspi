@@ -184,13 +184,6 @@ def run_rerere():
                     zoukin_souten.load_cloth_to_left()
                     mecanum.zidou_mecanum("左", 1, idou_kyori)
 
-                    if not wait_with_update(idou_kyori):
-                        stop_all_motors()
-                        continue
-                    if not wait_with_update(idou_kyori):
-                        stop_all_motors()
-                        continue
-
                     print("左への装填が完了しました。次は右へ動きます。")
                     current_direction = "right"  # 次回の動作を右に設定
 
@@ -198,17 +191,11 @@ def run_rerere():
                     zoukin_souten.load_cloth_to_right()
                     mecanum.zidou_mecanum("右", 1, idou_kyori)
 
-                    if not wait_with_update(idou_kyori):
-                        stop_all_motors()
-                        continue
-                    if not wait_with_update(idou_kyori):
-                        stop_all_motors()
-                        continue
 
                     print("右への装填が完了しました。次は左へ動きます。")
                     current_direction = "left"  # 次回の動作を左に設定
 
-                if not wait_with_update(1.0):
+                if not wait_with_update(0.5):
                     stop_all_motors()
                     continue
 

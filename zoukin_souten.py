@@ -28,7 +28,8 @@ import rerere
 
 UART_DEVICE = os.environ.get("ZOUKIN_SOUTEN_UART_DEVICE", "/dev/ttyAMA1")
 
-MOTOR_SPEED = 150
+MOTOR_SPEED = 120
+SAGE_MOTOR_SPEED = 240
 STOP_PAYLOAD = [0, 0, 0, 0, syoukou.PWM_LIST[0], syoukou.PWM_LIST[1], syoukou.PWM_LIST[2], syoukou.PWM_LIST[3]]  # モーター停止命令
 
 # ===== サーボ設定：ここだけ変更すれば調整できます =====
@@ -56,6 +57,8 @@ LIMIT_RESEAT_TIMEOUT = 3.0
 
 HIDARI_CYLINDER_FIRE_PARMISSION = False
 MIGI_CYLINDER_FIRE_PARMISSION = False
+
+OROSU_ZIKAN = 0.2
 
 # ==========================================
 # 外部プログラム連携用のグローバル変数と関数
@@ -200,7 +203,7 @@ def run_souten_direction(servo1, servo2, direction: str, poll_interval: float) -
             
             print("[状態] 右側(LIMIT1)から左側(LIMIT2)へ装填を開始します")
             # 雑巾保管場所を上げる
-            if not move_until_limit([0, 0, 0, MOTOR_SPEED, syoukou.PWM_LIST[0], syoukou.PWM_LIST[1], syoukou.PWM_LIST[2], syoukou.PWM_LIST[3]], LIMIT3_PIN, poll_interval):
+            if not move_until_limit([0, 0, 0, SAGE_MOTOR_SPEED, syoukou.PWM_LIST[0], syoukou.PWM_LIST[1], syoukou.PWM_LIST[2], syoukou.PWM_LIST[3]], LIMIT3_PIN, poll_interval):
                 return
             
             # サーボを閉じる
@@ -210,7 +213,7 @@ def run_souten_direction(servo1, servo2, direction: str, poll_interval: float) -
             stop_list_update()
 
             # 雑巾保管場所を下げる
-            if not _send_payload_for([0, 0, MOTOR_SPEED, 0, syoukou.PWM_LIST[0], syoukou.PWM_LIST[1], syoukou.PWM_LIST[2], syoukou.PWM_LIST[3]], 1, poll_interval):
+            if not _send_payload_for([0, 0, SAGE_MOTOR_SPEED, 0, syoukou.PWM_LIST[0], syoukou.PWM_LIST[1], syoukou.PWM_LIST[2], syoukou.PWM_LIST[3]], OROSU_ZIKAN, poll_interval):
                 return
             
             # 装填機構を左にスライド
@@ -227,7 +230,7 @@ def run_souten_direction(servo1, servo2, direction: str, poll_interval: float) -
 
             print("[状態] 左側(LIMIT2)から右側(LIMIT1)へ装填を開始します")
             # 雑巾保管場所を上げる
-            if not move_until_limit([0, 0, 0, MOTOR_SPEED, syoukou.PWM_LIST[0], syoukou.PWM_LIST[1], syoukou.PWM_LIST[2], syoukou.PWM_LIST[3]], LIMIT3_PIN, poll_interval):
+            if not move_until_limit([0, 0, 0, SAGE_MOTOR_SPEED, syoukou.PWM_LIST[0], syoukou.PWM_LIST[1], syoukou.PWM_LIST[2], syoukou.PWM_LIST[3]], LIMIT3_PIN, poll_interval):
                 return
             
             # サーボを閉じる
@@ -237,7 +240,7 @@ def run_souten_direction(servo1, servo2, direction: str, poll_interval: float) -
             stop_list_update()
 
             # 雑巾保管場所を下げる
-            if not _send_payload_for([0, 0, MOTOR_SPEED, 0, syoukou.PWM_LIST[0], syoukou.PWM_LIST[1], syoukou.PWM_LIST[2], syoukou.PWM_LIST[3]], 1, poll_interval):
+            if not _send_payload_for([0, 0, SAGE_MOTOR_SPEED, 0, syoukou.PWM_LIST[0], syoukou.PWM_LIST[1], syoukou.PWM_LIST[2], syoukou.PWM_LIST[3]], OROSU_ZIKAN, poll_interval):
                 return
             
             # 装填機構を右にスライド
@@ -273,14 +276,14 @@ def run_auto_test(servo1, servo2, poll_interval: float, retry_count: int = 0) ->
 
         if GPIO.input(LIMIT1_PIN) == GPIO.LOW:  
             print("[状態] 右側リミット位置として処理を開始")
-            if not move_until_limit([0, 0, 0, MOTOR_SPEED, syoukou.PWM_LIST[0], syoukou.PWM_LIST[1], syoukou.PWM_LIST[2], syoukou.PWM_LIST[3]], LIMIT3_PIN, poll_interval):
+            if not move_until_limit([0, 0, 0, SAGE_MOTOR_SPEED, syoukou.PWM_LIST[0], syoukou.PWM_LIST[1], syoukou.PWM_LIST[2], syoukou.PWM_LIST[3]], LIMIT3_PIN, poll_interval):
                 return
             move_servo(servo2, MIGI_CLOSED_ANGLE)
             move_servo(servo1, HIDARI_CLOSED_ANGLE)
             time.sleep(0.5)
             stop_list_update()
 
-            if not _send_payload_for([0, 0, MOTOR_SPEED, 0, syoukou.PWM_LIST[0], syoukou.PWM_LIST[1], syoukou.PWM_LIST[2], syoukou.PWM_LIST[3]], 1, poll_interval):
+            if not _send_payload_for([0, 0, SAGE_MOTOR_SPEED, 0, syoukou.PWM_LIST[0], syoukou.PWM_LIST[1], syoukou.PWM_LIST[2], syoukou.PWM_LIST[3]], OROSU_ZIKAN, poll_interval):
                 return
             if not move_until_limit([0, MOTOR_SPEED, 0, 0, syoukou.PWM_LIST[0], syoukou.PWM_LIST[1], syoukou.PWM_LIST[2], syoukou.PWM_LIST[3]], LIMIT2_PIN, poll_interval):
                 return  
@@ -288,13 +291,13 @@ def run_auto_test(servo1, servo2, poll_interval: float, retry_count: int = 0) ->
             
         elif GPIO.input(LIMIT2_PIN) == GPIO.LOW: 
             print("[状態] 左側リミット位置として処理を開始")
-            if not move_until_limit([0, 0, 0, MOTOR_SPEED, syoukou.PWM_LIST[0], syoukou.PWM_LIST[1], syoukou.PWM_LIST[2], syoukou.PWM_LIST[3]], LIMIT3_PIN, poll_interval):
+            if not move_until_limit([0, 0, 0, SAGE_MOTOR_SPEED, syoukou.PWM_LIST[0], syoukou.PWM_LIST[1], syoukou.PWM_LIST[2], syoukou.PWM_LIST[3]], LIMIT3_PIN, poll_interval):
                 return
             move_servo(servo1, HIDARI_CLOSED_ANGLE)
             move_servo(servo2, MIGI_CLOSED_ANGLE)
             time.sleep(0.5) 
             
-            if not _send_payload_for([0, 0, MOTOR_SPEED, 0, syoukou.PWM_LIST[0], syoukou.PWM_LIST[1], syoukou.PWM_LIST[2], syoukou.PWM_LIST[3]], 1, poll_interval):
+            if not _send_payload_for([0, 0, MOTOR_SPEED, 0, syoukou.PWM_LIST[0], syoukou.PWM_LIST[1], syoukou.PWM_LIST[2], syoukou.PWM_LIST[3]], OROSU_ZIKAN, poll_interval):
                 return
             if not move_until_limit([MOTOR_SPEED, 0, 0, 0, syoukou.PWM_LIST[0], syoukou.PWM_LIST[1], syoukou.PWM_LIST[2], syoukou.PWM_LIST[3]], LIMIT1_PIN, poll_interval):
                 return

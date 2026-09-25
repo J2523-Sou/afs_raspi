@@ -104,7 +104,7 @@ def zidou_mecanum(muki, speed, duration, max_speed=1):
     # === パラメータ調整箇所 ===
     ACCEL_STEP = 0.005  # 加速時のステップ（小さくすると発進時に滑りにくくなる）
     DECEL_STEP = 0.005   # ★減速時のステップ（大きくすると素早く止まるようになります）
-    MIN_OUTPUT_CUTOFF = 0.08 # ★最低速カットオフ値（これ以下の入力値になったら強制的に0にする）
+    MIN_OUTPUT_CUTOFF = 0.05 # ★最低速カットオフ値（これ以下の入力値になったら強制的に0にする）
     
     # 現在の仮想スティック値
     cur_lx, cur_ly, cur_rx = 0.0, 0.0, 0.0
