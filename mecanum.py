@@ -77,7 +77,7 @@ def speeds_to_pwm_payload(fl: float, fr: float, rl: float, rr: float, dead: floa
     return [fl_f, fl_r, fr_f, fr_r, rl_f, rl_r, rr_f, rr_r]
 
 def zidou_mecanum(muki, speed, duration, max_speed=1):
-    '''rerere.pyで使うコントローラーの命令無しで秒数指定で動くようにするやつ。
+    '''コントローラーの命令無しで秒数指定で動かす関数。
     スリップ（滑り）を最大限防ぐため、一定の加速度で滑らかに加減速を行います。'''
     
     # 1. 仮想のスティック目標値（Target）を設定
@@ -196,7 +196,18 @@ def run_mecanum(
 
     try:
         while True:
-            vals = [] if controller_state.is_emergency_stopped() else controller_state.get_values()
+            if controller_state.is_emergency_stopped():
+                cur_lx = cur_ly = cur_rx = cur_ry = 0.0
+                payload = [0] * 8
+                try:
+                    afs_send(0, payload)
+                    last_sent = list(payload)
+                except Exception as e:
+                    print("[EMERGENCY STOP] mecanum stop command failed:", repr(e))
+                time.sleep(poll_interval)
+                continue
+
+            vals = controller_state.get_values()
             if vals:
                 # 1. コントローラーからの目標値（Target）を取得
                 if len(vals) >= 7:

@@ -70,8 +70,8 @@ def run_receiver():
                             break
                         option_pressed = bool(receive[0] & OPTION_MASK)
                         if option_pressed and not last_option_pressed:
-                            locked = controller_state.toggle_emergency_stop()
-                            print("Emergency stop lock:", "ON" if locked else "OFF")
+                            controller_state.latch_emergency_stop()
+                            print("[EMERGENCY STOP] latched ON; restart the program to reset")
                         last_option_pressed = option_pressed
                         controller_state.set_values(receive)
             except OSError as e:

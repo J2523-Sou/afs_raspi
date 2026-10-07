@@ -34,11 +34,12 @@ def get_values(max_age=DEFAULT_MAX_AGE):
         return list(_values)
 
 
-def toggle_emergency_stop():
+def latch_emergency_stop():
+    """非常停止をラッチする。解除はプロセス再起動まで行わない。"""
     global _emergency_stop
     with _lock:
-        _emergency_stop = not _emergency_stop
-        return _emergency_stop
+        _emergency_stop = True
+        return True
 
 
 def is_emergency_stopped():

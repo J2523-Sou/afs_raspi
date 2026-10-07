@@ -24,7 +24,6 @@ from lib import controller_state
 from gpiozero import AngularServo
 import RPi.GPIO as GPIO
 import syoukou
-import rerere
 
 UART_DEVICE = os.environ.get("ZOUKIN_SOUTEN_UART_DEVICE", "/dev/ttyAMA1")
 
@@ -333,6 +332,8 @@ def run_zoukin_souten(poll_interval: float = 0.02):
             if controller_state.is_emergency_stopped():
                 if not emergency_stop_sent:
                     print("[安全停止] モーター停止命令を送信")
+                    syoukou.PWM_LIST[:] = [0, 0, 0, 0]
+                    STOP_PAYLOAD[:] = [0] * 8
                     _send_stop()
                     last_sent = list(STOP_PAYLOAD)
                     emergency_stop_sent = True
@@ -378,8 +379,7 @@ def run_zoukin_souten(poll_interval: float = 0.02):
                 time.sleep(0.2)
             else:
                 payload = STOP_PAYLOAD
-                if rerere.RERERE_MODE == False:
-                    stop_list_update()
+                stop_list_update()
 
             if payload != last_sent:
                 print("[UART SEND] payload:", payload)
